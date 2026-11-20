@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maintenance Planner Portal</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- TOAST NOTIFICATION CONTAINER (TOP RIGHT) -->
+  <div class="toast-container" id="toastContainer"></div>
+
+<!-- === LOGIN VIEW === -->
+  <div id="loginView" class="login-container">
+    <div class="login-bg-shapes">
+      <div class="shape shape-1"></div>
+      <div class="shape shape-2"></div>
+    </div>
+    <div class="login-card">
+      <!-- LOGO BARU DI HALAMAN LOGIN -->
+      <img src="logo.png" alt="Planner Hub Logo" class="login-brand-logo">
+      <div class="brand-badge">Planner Portal</div>
+      <h2>Maintenance Planner</h2>
+      <p class="login-subtitle">Pusat Kendali Operasional Maintenance</p>
+      
+      <form id="loginForm" onsubmit="event.preventDefault(); handleLogin();">
+        <div class="input-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="Masukkan username" required autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" required>
+        </div>
+        <div class="forgot-wrapper">
+          <a class="forgot-link" onclick="openModal('forgotPasswordModal')">Lupa Password?</a>
+        </div>
+        <button type="submit" class="btn-primary" id="btnLogin">
+          <span>MASUK SEKARANG</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </form>
+      <div id="loginError" class="alert-banner error-banner"></div>
+    </div>
+  </div>
+
+  <!-- === DASHBOARD VIEW === -->
+  <div id="dashboardView" class="dashboard-container">
+    <!-- OVERLAY LAYAR GELAP UNTUK MOBILE -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <!-- LOGO BARU DI SIDEBAR -->
+        <img src="logo.png" alt="Logo" class="sidebar-logo">
+        <div class="brand-text">
+          <h3>Planner Hub</h3>
+          <span>Maintenance Suite</span>
+        </div>
+      </div>
+      
+      <div class="sidebar-menu-wrapper">
+        <ul class="menu-list" id="menuList"></ul>
+      </div>
+
+      <div class="sidebar-user-footer">
+        <div class="user-info-text">
+          <span id="userNameDisplay">Loading...</span>
+          <span class="user-role-badge" id="userRoleBadge">Planner</span>
+        </div>
+        <button class="btn-logout" onclick="openLogoutModal()" title="Logout">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-viewport">
+      <header class="top-bar">
+        <div class="top-left">
+          <button class="btn-icon" onclick="toggleSidebar()" title="Toggle Sidebar">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <h2 class="page-title" id="pageTitle">Home</h2>
+        </div>
+
+        <div class="top-right">
+          <button class="btn-cloud" id="myComputerHeaderBtn" onclick="openWebServerModal()">
+            <span class="pulse-dot"></span>
+            <span>Cloud Server</span>
+          </button>
+
+          <div class="user-dropdown-container">
+            <button class="profile-pill" id="userProfileBtn" onclick="toggleUserDropdown(event)">
+              <div class="avatar" id="userAvatar">U</div>
+              <span id="userProfileName">User</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="dropdown-menu" id="userDropdown">
+              <div class="dropdown-header">
+                <div class="ud-name" id="udFullName">User</div>
+                <div class="ud-role" id="udRole">Maintenance Planner</div>
+              </div>
+              <div class="dropdown-item" onclick="openModal('changePasswordModal')">🔑 Ganti Password</div>
+              <div class="dropdown-item dev-item" id="systemEditMenu" onclick="openModal('systemEditModal')" style="display:none;">⚙️ System Edit</div>
+              <div class="dropdown-item dev-item" id="registerUserMenu" onclick="openModal('registerUserModal')" style="display:none;">👤 Registrasi Akun</div>
+              <div class="dropdown-item danger-item" id="deleteUserMenu" onclick="openModal('deleteUserModal')" style="display:none;">🗑️ Hapus Akun</div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-item danger-item" onclick="openLogoutModal()">🚪 Logout System</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-frame-container">
+        <div id="welcomeScreen" class="welcome-screen">
+          <div class="welcome-hero">
+            <h1 id="welcomeGreetingText">Selamat Datang</h1>
+            <p>Pilih modul di bawah untuk memulai atau navigasikan lewat bilah sisi kiri.</p>
+          </div>
+          <div id="homeSubMenuGrid" class="home-grid"></div>
+        </div>
+        <iframe id="moduleFrame" src="" allowfullscreen></iframe>
+      </div>
+    </main>
+  </div>
+
+  <!-- === MODAL POPUPS (ALL CENTERING ENHANCED) === -->
+
+  <!-- MODAL LOGOUT -->
+  <div class="modal-backdrop" id="logoutModal">
+    <div class="modal-box small-box">
+      <div class="modal-header-icon icon-warning">⚠️</div>
+      <h3>Konfirmasi Logout</h3>
+      <p class="modal-desc">Apakah Anda yakin ingin keluar dari sistem portal saat ini?</p>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal('logoutModal')">Batal</button>
+        <button class="btn-danger" onclick="confirmLogout()">Ya, Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL LUPA PASSWORD -->
+  <div class="modal-backdrop" id="forgotPasswordModal">
+    <div class="modal-box">
+      <div class="modal-header-icon icon-info">🔐</div>
+      <h3>Lupa Password</h3>
+      <p class="modal-desc">Masukkan email terdaftar. Kredensial akan dikirimkan secara otomatis.</p>
+      <div class="input-group">
+        <label>Email Terdaftar</label>
+        <input type="email" id="fpEmail" placeholder="nama@email.com">
+      </div>
+      <div class="gm-msg" id="fpMsg"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal('forgotPasswordModal')">Batal</button>
+        <button class="btn-primary" id="fpBtnSubmit" onclick="submitForgotPassword()">Kirim Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL GANTI PASSWORD -->
+  <div class="modal-backdrop" id="changePasswordModal">
+    <div class="modal-box">
+      <div class="modal-header-icon icon-info">🔑</div>
+      <h3>Ganti Password</h3>
+      <p class="modal-desc">Perbarui password akun Anda secara berkala demi keamanan.</p>
+      <div class="input-group"><label>Password Lama</label><input type="password" id="cpOldPass"></div>
+      <div class="input-group"><label>Password Baru</label><input type="password" id="cpNewPass"></div>
+      <div class="input-group"><label>Konfirmasi Password Baru</label><input type="password" id="cpConfirmPass"></div>
+      <div class="gm-msg" id="cpMsg"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal('changePasswordModal')">Batal</button>
+        <button class="btn-primary" id="cpBtnSubmit" onclick="submitChangePassword()">Simpan Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL SYSTEM EDIT -->
+  <div class="modal-backdrop" id="systemEditModal">
+    <div class="modal-box">
+      <div class="modal-header-icon icon-info">⚙️</div>
+      <h3>System Edit</h3>
+      <p class="modal-desc">Kelola modul dan tautan sistem (Khusus Hak Akses Developer).</p>
+      <div class="input-group">
+        <label>Aksi</label>
+        <select id="seAction" onchange="onSeActionChange()">
+          <option value="update">Tambah / Update Modul</option>
+          <option value="delete">Hapus Modul</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Tipe Modul</label>
+        <select id="seType" onchange="onSeTypeChange()">
+          <option value="dataEntry">Data Entry (Tahunan)</option>
+          <option value="standalone">Standalone (Menu Terpisah)</option>
+          <option value="home">Home (Sub-menu Dashboard)</option>
+        </select>
+      </div>
+      <div class="input-group" id="seYearGroup"><label>Tahun Target</label><input type="text" id="seYear" placeholder="Contoh: 2026"></div>
+      <div class="input-group">
+        <label>Module Key / ID</label>
+        <select id="seModuleSelect">
+          <option value="">-- Pilih Key --</option>
+          <option value="inputRH">Input RH</option>
+          <option value="inputOli">Input Oli</option>
+          <option value="inputCargo">Input Cargo</option>
+          <option value="inputBacklog">Input Backlog</option>
+          <option value="inputPmHistories">Input PM Histories</option>
+          <option value="inputJobOrder">Input Job Order</option>
+          <option value="workTask">Worktask Planner</option>
+          <option value="filterCrossRef">Filter Cross Ref</option>
+          <option value="General">Umum</option>
+        </select>
+        <input type="text" id="seModuleKeyInput" placeholder="Contoh: reportHarian" style="display:none;">
+      </div>
+      <div class="input-group" id="seModuleNameGroup" style="display:none;"><label>Nama Modul Tampil</label><input type="text" id="seModuleName" placeholder="Contoh: Laporan Harian"></div>
+      <div class="input-group" id="seUrlGroup"><label>URL Web App Baru</label><input type="text" id="seUrl" placeholder="https://script.google.com/macros/s/..."></div>
+      <div class="gm-msg" id="seMsg"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal('systemEditModal')">Batal</button>
+        <button class="btn-primary" id="seBtnSubmit" onclick="submitSystemEdit()">Simpan Modul</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL REGISTRASI AKUN -->
+  <div class="modal-backdrop" id="registerUserModal">
+    <div class="modal-box">
+      <div class="modal-header-icon icon-info">👤</div>
+      <h3>Registrasi Akun Baru</h3>
+      <p class="modal-desc">Tambahkan pengguna baru ke portal (Khusus Developer).</p>
+      <div class="input-group"><label>Username Login</label><input type="text" id="regUsername" autocomplete="off"></div>
+      <div class="input-group"><label>Password</label><input type="password" id="regPassword"></div>
+      <div class="input-group"><label>Nama Lengkap</label><input type="text" id="regNama"></div>
+      <div class="input-group"><label>Email</label><input type="email" id="regEmail"></div>
+      <div class="input-group">
+        <label>Level Otorisasi</label>
+        <select id="regLevel">
+          <option value="User">User / Planner Standar</option>
+          <option value="Viewer">Viewer (Hanya Lihat)</option>
+          <option value="Developer">Developer (Akses Penuh)</option>
+        </select>
+      </div>
+      <div class="gm-msg" id="regMsg"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal('registerUserModal')">Batal</button>
+        <button class="btn-primary" id="regBtnSubmit" onclick="submitRegisterUser()">Daftarkan User</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL HAPUS AKUN -->
+  <div class="modal-backdrop" id="deleteUserModal">
+    <div class="modal-box">
+      <div class="modal-header-icon icon-danger">🗑️</div>
+      <h3>Hapus Pengguna</h3>
+      <p class="modal-desc">Pilih akun pengguna yang ingin dihapus permanen dari sistem.</p>
+      <div class="input-group">
+        <label>Pilih Akun Target</label>
+        <select id="delUserSelect"><option value="">-- Memuat Daftar Akun --</option></select>
+      </div>
+      <div class="gm-msg" id="delUserMsg"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal('deleteUserModal')">Batal</button>
+        <button class="btn-danger" id="delUserBtnSubmit" onclick="submitDeleteUser()">Hapus Akun</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUSTOM ALERT MODAL -->
+  <div class="modal-backdrop" id="customAlertOverlay">
+    <div class="modal-box small-box">
+      <div id="customAlertIcon" class="modal-header-icon icon-info">ℹ️</div>
+      <h3 id="customAlertTitle">Informasi</h3>
+      <p id="customAlertMessage" class="modal-desc"></p>
+      <div class="modal-actions" style="justify-content:center;">
+        <button class="btn-primary" onclick="closeModal('customAlertOverlay')">Mengerti</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
