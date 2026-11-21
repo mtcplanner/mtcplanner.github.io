@@ -31,6 +31,7 @@ async function apiCall(actionName, payload = {}) {
 // === FLOATING TOAST NOTIFICATION (TOP RIGHT) ===
 function showToast(message, type = "success", title = "") {
   const container = document.getElementById("toastContainer");
+  if (!container) return;
   const toast = document.createElement("div");
   toast.className = `toast-card toast-${type}`;
   
@@ -54,22 +55,7 @@ function showToast(message, type = "success", title = "") {
   }, 4000);
 }
 
-// === UCAPAN AKTUAL & SESSION ===
-function updateWelcomeGreeting() {
-  const greetingEl = document.getElementById('welcomeGreetingText');
-  if (!greetingEl) return;
-  
-  const hour = new Date().getHours();
-  let greeting = 'Selamat Pagi';
-  if (hour >= 11 && hour < 15) greeting = 'Selamat Siang';
-  else if (hour >= 15 && hour < 18) greeting = 'Selamat Sore';
-  else if (hour >= 18 || hour < 4) greeting = 'Selamat Malam';
-
-  const userObj = currentUser || window._currentUser;
-  const displayName = userObj ? (userObj.nama || userObj.username) : '';
-  greetingEl.textContent = displayName ? `${greeting}, ${displayName} 👋` : greeting;
-}
-
+// === SESSION CHECK & LOGIN HANDLERS ===
 function checkSession() {
   const userSession = sessionStorage.getItem('user');
   if (userSession) {
@@ -95,21 +81,19 @@ function showDashboard(userData) {
   document.getElementById('dashboardView').style.display = 'flex';
   
   const name = userData.nama || userData.username;
-  document.getElementById('userNameDisplay').textContent = name;
-  document.getElementById('userProfileName').textContent = name;
-  document.getElementById('udFullName').textContent = name;
-  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  
+  if (document.getElementById('userProfileName')) document.getElementById('userProfileName').textContent = name;
+  if (document.getElementById('udFullName')) document.getElementById('udFullName').textContent = name;
+  if (document.getElementById('userAvatar')) document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
   
   const isDev = userData.level === 'Developer';
-  document.getElementById('userRoleBadge').textContent = isDev ? 'Developer' : 'Planner';
-  document.getElementById('udRole').textContent = isDev ? 'System Developer' : 'Maintenance Planner';
+  if (document.getElementById('udRole')) document.getElementById('udRole').textContent = isDev ? 'System Developer' : 'Maintenance Planner';
 
-  document.getElementById('systemEditMenu').style.display = isDev ? 'flex' : 'none';
-  document.getElementById('registerUserMenu').style.display = isDev ? 'flex' : 'none';
-  document.getElementById('deleteUserMenu').style.display = isDev ? 'flex' : 'none';
+  if (document.getElementById('systemEditMenu')) document.getElementById('systemEditMenu').style.display = isDev ? 'flex' : 'none';
+  if (document.getElementById('registerUserMenu')) document.getElementById('registerUserMenu').style.display = isDev ? 'flex' : 'none';
+  if (document.getElementById('deleteUserMenu')) document.getElementById('deleteUserMenu').style.display = isDev ? 'flex' : 'none';
 
   window._currentUser = userData;
-  updateWelcomeGreeting();
   reloadModulesInitial();
 }
 
@@ -164,6 +148,7 @@ async function reloadModulesInitial() {
 
 function renderMenu(config) {
   const list = document.getElementById('menuList');
+  if (!list) return;
   list.innerHTML = '';
 
   const homeLi = document.createElement('li');
@@ -255,7 +240,6 @@ function loadModule(id, url, name) {
   const finalUrl = `${url}${separator}role=${encodeURIComponent(role)}&user=${encodeURIComponent(username)}`;
 
   document.getElementById('welcomeScreen').style.display = 'none';
-  document.getElementById('pageTitle').textContent = name;
   document.getElementById('moduleFrame').src = finalUrl;
 
   sessionStorage.setItem('lastView', JSON.stringify({ type: 'module', id, url, name }));
@@ -264,13 +248,13 @@ function loadModule(id, url, name) {
 function showHome() {
   document.getElementById('moduleFrame').src = '';
   document.getElementById('welcomeScreen').style.display = 'block';
-  document.getElementById('pageTitle').textContent = 'Dashboard Home';
   sessionStorage.setItem('lastView', JSON.stringify({ type: 'home' }));
   renderHomeCards();
 }
 
 function renderHomeCards() {
   const grid = document.getElementById('homeSubMenuGrid');
+  if (!grid) return;
   grid.innerHTML = '';
 
   if (modulesData && modulesData.home && modulesData.home.length > 0) {
@@ -282,8 +266,21 @@ function renderHomeCards() {
       grid.appendChild(card);
     });
   } else {
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:#94a3b8;">Belum ada sub-menu home dikonfigurasi.</div>';
+    grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:#94a3b8; font-size:12px; padding:20px;">Belum ada sub-menu home dikonfigurasi.</div>';
   }
+}
+
+function filterHomeCards(query) {
+  const q = query.toLowerCase();
+  const cards = document.querySelectorAll('.home-card');
+  cards.forEach(card => {
+    const title = card.querySelector('.home-title')?.textContent.toLowerCase() || '';
+    if (title.includes(q)) {
+      card.style.display = 'flex';
+    } else {
+      card.style.display = 'none';
+    }
+  });
 }
 
 function toggleSidebar() {
@@ -291,11 +288,9 @@ function toggleSidebar() {
   const overlay = document.getElementById('sidebarOverlay');
 
   if (window.innerWidth <= 768) {
-    // Mode Mobile: Toggle slide-in drawer
     const isOpen = sidebar.classList.toggle('active');
     if (overlay) overlay.classList.toggle('show', isOpen);
   } else {
-    // Mode Desktop: Toggle collapsed sidebar
     isSidebarVisible = !isSidebarVisible;
     sidebar.classList.toggle('collapsed', !isSidebarVisible);
   }
@@ -313,8 +308,10 @@ document.addEventListener('click', () => {
 
 // === MODALS MANAGEMENT ===
 function openModal(id) {
-  document.getElementById('userDropdown').classList.remove('show');
+  const dropdown = document.getElementById('userDropdown');
+  if (dropdown) dropdown.classList.remove('show');
   const modal = document.getElementById(id);
+  if (!modal) return;
   modal.style.display = 'flex';
   setTimeout(() => modal.classList.add('show'), 10);
 
@@ -323,6 +320,7 @@ function openModal(id) {
 
 function closeModal(id) {
   const modal = document.getElementById(id);
+  if (!modal) return;
   modal.classList.remove('show');
   setTimeout(() => modal.style.display = 'none', 200);
 }
@@ -336,7 +334,6 @@ function confirmLogout() {
   showToast("Anda telah keluar dari akun.", "success");
 }
 
-// Modal Handlers
 async function submitForgotPassword() {
   const email = document.getElementById('fpEmail').value.trim();
   const msg = document.getElementById('fpMsg');
@@ -475,5 +472,5 @@ function onSeTypeChange() {
 }
 
 function openWebServerModal() {
-  window.open('https://webos-drive-server.onrender.com/', '_blank');
+  window.open('https://webserver-40px.onrender.com/', '_blank');
 }

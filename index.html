@@ -1,12 +1,12 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Maintenance Planner Portal</title>
+  <title>MTC Planner - Enterprise Suite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,17 +14,16 @@
   <!-- TOAST NOTIFICATION CONTAINER (TOP RIGHT) -->
   <div class="toast-container" id="toastContainer"></div>
 
-<!-- === LOGIN VIEW === -->
+  <!-- === LOGIN VIEW === -->
   <div id="loginView" class="login-container">
     <div class="login-bg-shapes">
       <div class="shape shape-1"></div>
       <div class="shape shape-2"></div>
     </div>
     <div class="login-card">
-      <!-- LOGO BARU DI HALAMAN LOGIN -->
       <img src="logo.png" alt="Planner Hub Logo" class="login-brand-logo">
       <div class="brand-badge">Planner Portal</div>
-      <h2>Maintenance Planner</h2>
+      <h2>MTC Planner</h2>
       <p class="login-subtitle">Pusat Kendali Operasional Maintenance</p>
       
       <form id="loginForm" onsubmit="event.preventDefault(); handleLogin();">
@@ -41,7 +40,7 @@
         </div>
         <button type="submit" class="btn-primary" id="btnLogin">
           <span>MASUK SEKARANG</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
       </form>
       <div id="loginError" class="alert-banner error-banner"></div>
@@ -50,85 +49,114 @@
 
   <!-- === DASHBOARD VIEW === -->
   <div id="dashboardView" class="dashboard-container">
-    <!-- OVERLAY LAYAR GELAP UNTUK MOBILE -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
-
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <!-- LOGO BARU DI SIDEBAR -->
-        <img src="logo.png" alt="Logo" class="sidebar-logo">
-        <div class="brand-text">
-          <h3>Planner Hub</h3>
-          <span>Maintenance Suite</span>
-        </div>
-      </div>
-      
-      <div class="sidebar-menu-wrapper">
-        <ul class="menu-list" id="menuList"></ul>
-      </div>
-
-      <div class="sidebar-user-footer">
-        <div class="user-info-text">
-          <span id="userNameDisplay">Loading...</span>
-          <span class="user-role-badge" id="userRoleBadge">Planner</span>
-        </div>
-        <button class="btn-logout" onclick="openLogoutModal()" title="Logout">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+    
+    <!-- TOP BAR / HEADER FULL WIDTH -->
+    <header class="top-bar">
+      <div class="top-left">
+        <button class="btn-icon" onclick="toggleSidebar()" title="Toggle Sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
         </button>
+        <div class="brand-wrapper">
+          <img src="company_logo.png" alt="Logo" class="top-bar-logo">
+          <div class="brand-text">
+            <h2>MTC PLANNER</h2>
+            <span>ENTERPRISE SUITE</span>
+          </div>
+        </div>
       </div>
-    </aside>
 
-    <main class="main-viewport">
-      <header class="top-bar">
-        <div class="top-left">
-          <button class="btn-icon" onclick="toggleSidebar()" title="Toggle Sidebar">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-          <h2 class="page-title" id="pageTitle">Home</h2>
+      <div class="top-right">
+        <div class="top-mini-badge" title="Fresco">
+          <img src="logo.png" alt="Fresco Logo" class="mini-logo-img">
         </div>
 
-        <div class="top-right">
-          <button class="btn-cloud" id="myComputerHeaderBtn" onclick="openWebServerModal()">
-            <span class="pulse-dot"></span>
-            <span>Cloud Server</span>
-          </button>
+        <button class="btn-cloud" id="myComputerHeaderBtn" onclick="openWebServerModal()">
+          <span class="pulse-dot"></span>
+          <span>Cloud Server</span>
+        </button>
 
-          <div class="user-dropdown-container">
-            <button class="profile-pill" id="userProfileBtn" onclick="toggleUserDropdown(event)">
-              <div class="avatar" id="userAvatar">U</div>
-              <span id="userProfileName">User</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-            <div class="dropdown-menu" id="userDropdown">
-              <div class="dropdown-header">
-                <div class="ud-name" id="udFullName">User</div>
-                <div class="ud-role" id="udRole">Maintenance Planner</div>
-              </div>
-              <div class="dropdown-item" onclick="openModal('changePasswordModal')">🔑 Ganti Password</div>
-              <div class="dropdown-item dev-item" id="systemEditMenu" onclick="openModal('systemEditModal')" style="display:none;">⚙️ System Edit</div>
-              <div class="dropdown-item dev-item" id="registerUserMenu" onclick="openModal('registerUserModal')" style="display:none;">👤 Registrasi Akun</div>
-              <div class="dropdown-item danger-item" id="deleteUserMenu" onclick="openModal('deleteUserModal')" style="display:none;">🗑️ Hapus Akun</div>
-              <div class="dropdown-divider"></div>
-              <div class="dropdown-item danger-item" onclick="openLogoutModal()">🚪 Logout System</div>
+        <div class="user-dropdown-container">
+          <button class="profile-pill" id="userProfileBtn" onclick="toggleUserDropdown(event)">
+            <div class="avatar" id="userAvatar">U</div>
+            <span id="userProfileName">User</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="dropdown-menu" id="userDropdown">
+            <div class="dropdown-header">
+              <div class="ud-name" id="udFullName">User</div>
+              <div class="ud-role" id="udRole">Maintenance Planner</div>
             </div>
+            <div class="dropdown-item" onclick="openModal('changePasswordModal')">🔑 Ganti Password</div>
+            <div class="dropdown-item dev-item" id="systemEditMenu" onclick="openModal('systemEditModal')" style="display:none;">⚙️ System Edit</div>
+            <div class="dropdown-item dev-item" id="registerUserMenu" onclick="openModal('registerUserModal')" style="display:none;">👤 Registrasi Akun</div>
+            <div class="dropdown-item danger-item" id="deleteUserMenu" onclick="openModal('deleteUserModal')" style="display:none;">🗑️ Hapus Akun</div>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-item danger-item" onclick="openLogoutModal()">🚪 Logout System</div>
           </div>
         </div>
-      </header>
-
-      <div class="content-frame-container">
-        <div id="welcomeScreen" class="welcome-screen">
-          <div class="welcome-hero">
-            <h1 id="welcomeGreetingText">Selamat Datang</h1>
-            <p>Pilih modul di bawah untuk memulai atau navigasikan lewat bilah sisi kiri.</p>
-          </div>
-          <div id="homeSubMenuGrid" class="home-grid"></div>
-        </div>
-        <iframe id="moduleFrame" src="" allowfullscreen></iframe>
       </div>
-    </main>
+    </header>
+
+    <!-- DASHBOARD BODY CONTAINER (SIDEBAR & MAIN VIEWPORT SIDE-BY-SIDE) -->
+    <div class="dashboard-body">
+      <!-- OVERLAY LAYAR GELAP UNTUK MOBILE -->
+      <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-section-label">NAVIGASI MODUL</div>
+        
+        <div class="sidebar-menu-wrapper">
+          <ul class="menu-list" id="menuList"></ul>
+        </div>
+
+        <!-- KARTU INFORMASI PUSAT DATA DI BOTTOM SIDEBAR -->
+        <div class="sidebar-info-card">
+          <h4>Pusat Data Maintenance</h4>
+          <p>Akses cepat ke database laporan & riwayat unit.</p>
+        </div>
+
+        <!-- FOOTER VERSI TANPA DATA USER LOGIN DI SIDEBAR -->
+        <div class="sidebar-footer">
+          <div class="footer-left">
+            <span class="status-dot-green"></span>
+            <span>v2.5 Enterprise</span>
+          </div>
+          <div class="footer-right">
+            Dev by <strong>Fresco Simarmata</strong>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-viewport">
+        <div class="content-frame-container">
+          <div id="welcomeScreen" class="welcome-screen">
+            <!-- HERO CARD (MTC Planner Hub) -->
+            <div class="welcome-hero">
+              <span class="hero-badge">OPERATIONAL CONTROL</span>
+              <h1 id="welcomeGreetingText">MTC Planner Hub</h1>
+              <p>Kelola dan pantau seluruh aktivitas perawatan unit operasional dalam satu platform terpadu.</p>
+              
+              <div class="hero-search-wrapper">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="heroSearchInput" placeholder="Cari modul atau laporan..." oninput="filterHomeCards(this.value)">
+              </div>
+            </div>
+
+            <div class="section-header">
+              <h3 id="pageTitle">Modul Utilitas & Laporan Utama</h3>
+            </div>
+
+            <div id="homeSubMenuGrid" class="home-grid"></div>
+          </div>
+          <iframe id="moduleFrame" src="" allowfullscreen></iframe>
+        </div>
+      </main>
+    </div>
   </div>
 
-  <!-- === MODAL POPUPS (ALL CENTERING ENHANCED) === -->
+  <!-- === MODAL POPUPS === -->
 
   <!-- MODAL LOGOUT -->
   <div class="modal-backdrop" id="logoutModal">
@@ -210,8 +238,6 @@
           <option value="inputBacklog">Input Backlog</option>
           <option value="inputPmHistories">Input PM Histories</option>
           <option value="inputJobOrder">Input Job Order</option>
-          <option value="workTask">Worktask Planner</option>
-          <option value="filterCrossRef">Filter Cross Ref</option>
           <option value="General">Umum</option>
         </select>
         <input type="text" id="seModuleKeyInput" placeholder="Contoh: reportHarian" style="display:none;">
