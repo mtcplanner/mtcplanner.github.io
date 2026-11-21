@@ -435,11 +435,13 @@ function onSeActionChange() {
   const action = document.getElementById('seAction').value;
   const urlGroup = document.getElementById('seUrlGroup');
   const nameGroup = document.getElementById('seModuleNameGroup');
+  const iconGroup = document.getElementById('seIconGroup');
   const btn = document.getElementById('seBtnSubmit');
 
   if (action === 'delete') {
     urlGroup.style.display = 'none';
     nameGroup.style.display = 'none';
+    if (iconGroup) iconGroup.style.display = 'none';
     btn.textContent = 'Hapus Modul';
     btn.className = 'btn-danger';
   } else {
@@ -457,20 +459,56 @@ function onSeTypeChange() {
   const moduleSelect = document.getElementById('seModuleSelect');
   const moduleKeyInput = document.getElementById('seModuleKeyInput');
   const moduleNameGroup = document.getElementById('seModuleNameGroup');
+  const iconGroup = document.getElementById('seIconGroup');
 
   if (type === 'dataEntry') {
     yearGroup.style.display = 'block';
     moduleSelect.style.display = 'block';
     moduleKeyInput.style.display = 'none';
     moduleNameGroup.style.display = 'none';
+    if (iconGroup) iconGroup.style.display = 'none';
   } else {
     yearGroup.style.display = 'none';
     moduleSelect.style.display = 'none';
     moduleKeyInput.style.display = 'block';
-    if (action === 'update') moduleNameGroup.style.display = 'block';
+    if (action === 'update') {
+      moduleNameGroup.style.display = 'block';
+      if (iconGroup) iconGroup.style.display = 'block';
+    } else {
+      moduleNameGroup.style.display = 'none';
+      if (iconGroup) iconGroup.style.display = 'none';
+    }
   }
 }
 
+async function submitSystemEdit() {
+  const action = document.getElementById('seAction').value;
+  const type = document.getElementById('seType').value;
+  const tahun = document.getElementById('seYear').value.trim();
+  const moduleSelect = document.getElementById('seModuleSelect').value;
+  const moduleKeyInput = document.getElementById('seModuleKeyInput').value.trim();
+  const moduleName = document.getElementById('seModuleName').value.trim();
+  const icon = document.getElementById('seIcon')?.value.trim() || '';
+  const newUrl = document.getElementById('seUrl').value.trim();
+  const msg = document.getElementById('seMsg');
+
+  const moduleKey = (type === 'dataEntry') ? moduleSelect : moduleKeyInput;
+  const payload = { 
+    username: currentUser.username, 
+    tahun: type === 'dataEntry' ? tahun : type, 
+    moduleKey, 
+    moduleNameInput: moduleName, 
+    icon: type !== 'dataEntry' ? icon : '', 
+    newUrl 
+  };
+
+  const res = await apiCall(action === 'update' ? 'updateModuleUrl' : 'deleteModule', payload);
+  showMsg(msg, res.message, res.success);
+  if (res.success) {
+    showToast(res.message, "success");
+    setTimeout(() => { closeModal('systemEditModal'); reloadModulesInitial(); }, 1500);
+  }
+}
 function openWebServerModal() {
   window.open('https://webserver-40px.onrender.com/', '_blank');
 }
