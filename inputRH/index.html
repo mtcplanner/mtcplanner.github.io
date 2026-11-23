@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Input RH </title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- HEADER COMPACT -->
+  <header class="ews-header">
+    <div class="ews-brand">
+      <span class="ews-pill">Input Running Hours</span>
+      <span class="ews-meta" id="sheetInfoText">• Entry Data</span>
+    </div>
+    <div class="ews-actions">
+      <!-- HANYA TAMPIL UNTUK LEVEL AKUN DEVELOPER -->
+      <button type="button" class="btn btn-ghost dev-only-control" id="btnApiConfig" style="display:none;" onclick="openApiConfigModal()" title="Pengaturan URL Web App GAS (Developer)">
+        <i class="bi bi-link-45deg"></i> API URL
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="loadSheetData()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button type="button" class="btn btn-success" onclick="openAddEqModal()">
+        <i class="bi bi-plus-lg"></i> Unit Baru
+      </button>
+      <button type="button" class="btn btn-primary" onclick="saveAllChanges()">
+        <i class="bi bi-cloud-check-fill"></i> Simpan (<span id="dirtyCount">0</span>)
+      </button>
+    </div>
+  </header>
+
+  <!-- QUICK ENTRY & FILTER BAR -->
+  <section class="workbench-bar">
+    <div class="filter-cluster">
+      <div class="filter-item">
+        <label>Bulan</label>
+        <select id="monthFilter" class="ctrl-select" onchange="onFilterChange()">
+          <option value="ALL">Semua Bulan</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>RIG</label>
+        <select id="rigFilter" class="ctrl-select" onchange="onFilterChange()">
+          <option value="ALL">Semua RIG</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>Cari Unit</label>
+        <input type="text" id="searchUnit" class="ctrl-input" placeholder="Nama / C/N / S/N..." oninput="onFilterChange()" />
+      </div>
+    </div>
+
+    <div class="quick-date-box">
+      <span class="quick-title"><i class="bi bi-lightning-charge-fill"></i> Quick Input Tanggal:</span>
+      <select id="quickDateColSelect" class="ctrl-select" style="min-width:115px;"></select>
+      <input type="number" id="quickDateValue" class="ctrl-input" placeholder="Jam (RH)" style="width:88px;" />
+      <button type="button" class="btn btn-primary btn-sm" onclick="applyQuickDateToSelected()" title="Isi ke unit yang sedang dipilih">
+        Isi Unit Aktif
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="applyQuickDateToAllFiltered()" title="Isi ke semua unit yang tampil sesuai filter">
+        Isi Semua Tampil
+      </button>
+    </div>
+
+    <div class="paste-cluster">
+      <span class="paste-badge"><kbd>Ctrl+V</kbd> Paste Excel</span>
+      <input type="file" id="excelUploadInput" accept=".xlsx,.xls" style="display:none;" onchange="handleExcelFileUpload(event)" />
+      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('excelUploadInput').click()">
+        <i class="bi bi-file-earmark-spreadsheet"></i> Upload .xlsx
+      </button>
+    </div>
+  </section>
+
+  <!-- SPLIT WORKBENCH -->
+  <main class="split-workbench">
+
+    <!-- PANEL KIRI: DAFTAR EQUIPMENT -->
+    <aside class="asset-panel">
+      <div class="panel-head">
+        <span><i class="bi bi-hdd-stack"></i> Daftar Equipment</span>
+        <span class="count-chip" id="unitCountBadge">0</span>
+      </div>
+      <div class="asset-list" id="assetListContainer">
+        <div class="empty-state">Memuat daftar unit...</div>
+      </div>
+    </aside>
+
+    <!-- PANEL KANAN: MATRIX HARIAN & FORM DETAIL UNIT -->
+    <section class="detail-panel">
+      <div class="panel-head detail-head">
+        <div class="mode-switch">
+          <button type="button" class="mode-btn active" id="btnModeMatrix" onclick="switchViewMode('matrix')">
+            <i class="bi bi-grid-3x3-gap"></i> Matrix Harian
+          </button>
+          <button type="button" class="mode-btn" id="btnModeForm" onclick="switchViewMode('form')">
+            <i class="bi bi-card-checklist"></i> Form Unit Terpilih
+          </button>
+        </div>
+
+        <div class="selected-unit-banner" id="selectedUnitBanner">
+          Unit Aktif: <strong>-</strong>
+        </div>
+      </div>
+
+      <div class="view-pane active" id="viewMatrix">
+        <div class="matrix-scroll" id="matrixScroll">
+          <table class="maximo-table" id="rhGridTable">
+            <thead id="rhGridHead"></thead>
+            <tbody id="rhGridBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="view-pane" id="viewForm">
+        <div class="form-workspace" id="selectedUnitFormBody">
+          <div class="empty-state">Pilih salah satu equipment di panel kiri untuk mengisi jam per tanggal.</div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- MODAL TAMBAH EQUIPMENT BARU -->
+  <div class="modal-backdrop" id="addEqModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-plus-circle"></i> Tambah Equipment Baru</h3>
+        <button type="button" class="modal-close" onclick="closeAddEqModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>Equipment Name *</label>
+          <input type="text" id="newEqName" placeholder="Contoh: Engine MP 2" />
+        </div>
+        <div class="grid-2">
+          <div class="form-field">
+            <label>C/N</label>
+            <input type="text" id="newEqCn" placeholder="082003514" />
+          </div>
+          <div class="form-field">
+            <label>S/N</label>
+            <input type="text" id="newEqSn" placeholder="67Z00767" />
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-field">
+            <label>TYPE</label>
+            <input type="text" id="newEqType" placeholder="CAT-3512" />
+          </div>
+          <div class="form-field">
+            <label>RIG</label>
+            <input type="text" id="newEqRig" placeholder="BN-05" />
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="form-field">
+            <label>Satuan</label>
+            <input type="text" id="newEqSatuan" value="Jam" />
+          </div>
+          <div class="form-field">
+            <label>Hour Meter Awal</label>
+            <input type="number" id="newEqAwal" value="0" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeAddEqModal()">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="submitNewEquipment()">Simpan Unit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL KONFIGURASI URL GAS (KHUSUS LEVEL DEVELOPER) -->
+  <div class="modal-backdrop dev-only-control" id="apiConfigModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-gear"></i> Konfigurasi Endpoint GAS (Developer)</h3>
+        <button type="button" class="modal-close" onclick="closeApiConfigModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>URL Web App Google Apps Script</label>
+          <input type="url" id="gasApiUrlInput" placeholder="https://script.google.com/macros/s/...../exec" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfigModal()">Tutup</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan &amp; Muat</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    // ============================================================
+    // 1. HAK AKSES API URL: HANYA UNTUK LEVEL AKUN "Developer"
+    // ============================================================
+    function resolveUserRole() {
+      const params = new URLSearchParams(window.location.search);
+      const urlRole = params.get("role");
+      if (urlRole) {
+        sessionStorage.setItem("MTC_USER_ROLE", urlRole.trim());
+      }
+      const portalUser = window.parent && window.parent.currentUser;
+      if (portalUser && portalUser.role) {
+        return String(portalUser.role).trim();
+      }
+      return (sessionStorage.getItem("MTC_USER_ROLE") || localStorage.getItem("MTC_USER_ROLE") || "").trim();
+    }
+
+    function applyDeveloperAccessControl() {
+      const role = resolveUserRole().toLowerCase();
+      const isDeveloper = role === "developer";
+      const btnApi = document.getElementById("btnApiConfig");
+      const modalApi = document.getElementById("apiConfigModal");
+
+      if (btnApi) {
+        btnApi.style.display = isDeveloper ? "inline-flex" : "none";
+      }
+      if (!isDeveloper && modalApi) {
+        modalApi.classList.remove("active");
+        modalApi.style.display = "none";
+      } else if (isDeveloper && modalApi) {
+        modalApi.style.display = "";
+      }
+    }
+
+    window.addEventListener("message", function(event) {
+      const data = event.data;
+      if (data && (data.type === "SET_USER_ROLE" || data.action === "setRole") && data.role) {
+        sessionStorage.setItem("MTC_USER_ROLE", String(data.role).trim());
+        applyDeveloperAccessControl();
+      }
+    });
+
+    const _origOpenApiConfigModal = window.openApiConfigModal;
+    window.openApiConfigModal = function() {
+      if (resolveUserRole().toLowerCase() !== "developer") return;
+      if (typeof _origOpenApiConfigModal === "function") _origOpenApiConfigModal();
+    };
+
+    // ============================================================
+    // 2. FORMAT ANGKA AVG MTD KE 2 DESIMAL SAJA
+    // ============================================================
+    function formatAvgTwoDecimals(val) {
+      if (val === "" || val === null || val === undefined) return "0.00";
+      const num = Number(String(val).replace(/,/g, ""));
+      if (isNaN(num)) return String(val);
+      return num.toFixed(2);
+    }
+
+    function applyTwoDecimalFormattingToAvg() {
+      document.querySelectorAll("#rhGridBody td.td-avg").forEach(td => {
+        td.textContent = formatAvgTwoDecimals(td.textContent);
+      });
+
+      document.querySelectorAll("#selectedUnitFormBody .kpi-box").forEach(box => {
+        const labelEl = box.querySelector(".k-label");
+        const valEl = box.querySelector(".k-val");
+        if (labelEl && valEl && String(labelEl.textContent || "").toUpperCase().includes("AVG")) {
+          valEl.textContent = formatAvgTwoDecimals(valEl.textContent);
+        }
+      });
+    }
+
+    // ============================================================
+    // 3. OPTIMASI RENDERING: HINDARI RE-RENDER PENUH SAAT KETIK
+    // ============================================================
+    document.addEventListener("DOMContentLoaded", function() {
+      applyDeveloperAccessControl();
+
+      if (typeof window.renderAll === "function") {
+        const _origRenderAll = window.renderAll;
+        window.renderAll = function() {
+          _origRenderAll.apply(this, arguments);
+          applyTwoDecimalFormattingToAvg();
+          applyDeveloperAccessControl();
+        };
+      }
+
+      // Saat mengubah nilai di sel Matrix, cukup perbarui state & class dirty tanpa me-render ulang seluruh tabel
+      if (typeof window.applyCellChange === "function") {
+        const _origApplyCellChange = window.applyCellChange;
+        window.applyCellChange = function(rowIndexRaw, colIndex, rawValue, el) {
+          _origApplyCellChange.call(this, rowIndexRaw, colIndex, rawValue, el);
+          applyTwoDecimalFormattingToAvg();
+        };
+      }
+    });
+  </script>
+</body>
+</html>
