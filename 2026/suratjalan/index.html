@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Surat Jalan (Goods Movement)</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- HEADER COMPACT -->
+  <header class="sj-header">
+    <div class="sj-brand">
+      <span class="sj-pill">GOODS MOVEMENT • SAP / MAXIMO</span>
+      <h1>Rekapitulasi Surat Jalan</h1>
+      <span class="sj-meta" id="sjSummaryMeta">• Barang Masuk &amp; Barang Keluar</span>
+    </div>
+    <div class="sj-actions">
+      <button type="button" class="btn btn-ghost" id="btnApiConfig" style="display:none;" onclick="openApiConfigModal()">
+        <i class="bi bi-link-45deg"></i> API URL
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="loadData()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="exportToExcel()">
+        <i class="bi bi-file-earmark-excel"></i> Export .xlsx
+      </button>
+      <button type="button" class="btn btn-primary" onclick="openCreateDocModal()">
+        <i class="bi bi-plus-lg"></i> Buat Surat Jalan
+      </button>
+    </div>
+  </header>
+
+  <!-- KPI & FILTER BAR -->
+  <section class="sj-toolbar">
+    <div class="kpi-row">
+      <div class="kpi-chip">
+        <span class="k-lbl">Total Dokumen</span>
+        <span class="k-num" id="kpiTotalDoc">0</span>
+      </div>
+      <div class="kpi-chip kpi-in">
+        <span class="k-lbl">Barang Masuk</span>
+        <span class="k-num" id="kpiMasuk">0</span>
+      </div>
+      <div class="kpi-chip kpi-out">
+        <span class="k-lbl">Barang Keluar</span>
+        <span class="k-num" id="kpiKeluar">0</span>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <select id="filterInputType" class="ctrl-select" onchange="applyFilters()">
+        <option value="ALL">Semua Transaksi</option>
+        <option value="Barang Masuk">Barang Masuk</option>
+        <option value="Barang Keluar">Barang Keluar</option>
+      </select>
+      <input type="month" id="filterMonth" class="ctrl-input" onchange="applyFilters()" title="Filter Bulan" />
+      <input type="text" id="filterSearch" class="ctrl-input" placeholder="Cari No Doc / Item No / Item / Pengirim / Tujuan..." oninput="applyFilters()" style="width:240px;" />
+    </div>
+  </section>
+
+  <!-- SPLIT WORKBENCH (ALA SAP MIGO / MAXIMO INVENTORY) -->
+  <main class="sj-workbench">
+
+    <!-- PANEL KIRI: DAFTAR DOKUMEN SURAT JALAN -->
+    <aside class="doc-list-panel">
+      <div class="panel-head">
+        <span><i class="bi bi-file-earmark-text"></i> Daftar Dokumen</span>
+        <span class="badge-count" id="docListCount">0</span>
+      </div>
+      <div class="doc-list-scroll" id="docListContainer">
+        <div class="empty-box">Memuat dokumen...</div>
+      </div>
+    </aside>
+
+    <!-- PANEL KANAN: DETAIL DOKUMEN & TABEL REKAP -->
+    <section class="doc-detail-panel">
+      <div class="panel-head detail-head">
+        <div class="tab-switch">
+          <button type="button" class="tab-btn active" id="tabBtnAll" onclick="switchView('all')">
+            <i class="bi bi-table"></i> Semua Transaksi (Rekap)
+          </button>
+          <button type="button" class="tab-btn" id="tabBtnDetail" onclick="switchView('detail')">
+            <i class="bi bi-card-list"></i> Detail Dokumen Terpilih
+          </button>
+        </div>
+        <div id="activeDocInfo" class="active-doc-label">Semua Dokumen</div>
+      </div>
+
+      <!-- VIEW 1: TABEL REKAPITULASI LENGKAP (HEADER RATA TENGAH) -->
+      <div class="view-section active" id="viewAll">
+        <div class="table-scroll">
+          <table class="sj-table">
+            <thead>
+              <tr>
+                <th style="width:45px;">No</th>
+                <th style="width:105px;">Tanggal</th>
+                <th style="width:140px;">No Document</th>
+                <th style="width:120px;">Item No</th>
+                <th>Item</th>
+                <th style="width:75px;">Qty</th>
+                <th style="width:130px;">Input</th>
+                <th style="width:130px;">Pengirim</th>
+                <th style="width:130px;">Tujuan</th>
+                <th>Keterangan</th>
+                <th style="width:80px;">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="rekapTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- VIEW 2: KARTU DETAIL DOKUMEN TERPILIH -->
+      <div class="view-section" id="viewDetail">
+        <div class="detail-scroll" id="docDetailBody">
+          <div class="empty-box">Pilih nomor dokumen di sebelah kiri untuk melihat rincian Surat Jalan.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL BUAT SURAT JALAN BARU (HEADER + MULTI-ITEM) -->
+  <div class="modal-backdrop" id="createDocModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3><i class="bi bi-truck"></i> Input Dokumen Surat Jalan Baru</h3>
+        <button type="button" class="modal-close" onclick="closeCreateDocModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid-3">
+          <div class="form-field">
+            <label>Tanggal *</label>
+            <input type="date" id="docTanggal" />
+          </div>
+          <div class="form-field">
+            <label>No Document *</label>
+            <input type="text" id="docNo" placeholder="Contoh: SJ/2026/11/001" />
+          </div>
+          <div class="form-field">
+            <label>Jenis Input *</label>
+            <select id="docInputType">
+              <option value="Barang Masuk">Barang Masuk</option>
+              <option value="Barang Keluar">Barang Keluar</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="form-field">
+            <label>Pengirim *</label>
+            <input type="text" id="docPengirim" placeholder="Nama Gudang / Vendor / Rig" />
+          </div>
+          <div class="form-field">
+            <label>Tujuan *</label>
+            <input type="text" id="docTujuan" placeholder="Lokasi / Rig Tujuan" />
+          </div>
+          <div class="form-field">
+            <label>Keterangan Umum</label>
+            <input type="text" id="docKeterangan" placeholder="Opsional..." />
+          </div>
+        </div>
+
+        <!-- TABEL LINE ITEMS (MULTI BARANG DALAM 1 SURAT JALAN) -->
+        <div class="line-items-box">
+          <div class="line-items-head">
+            <span>Daftar Item Barang (Ketik/Pilih Item No untuk auto-isi Item)</span>
+            <button type="button" class="btn btn-success btn-sm" onclick="addModalItemRow()">
+              <i class="bi bi-plus-lg"></i> Tambah Item
+            </button>
+          </div>
+          <div class="line-items-scroll">
+            <table class="sj-table">
+              <thead>
+                <tr>
+                  <th style="width:40px;">No</th>
+                  <th style="width:140px;">Item No</th>
+                  <th>Nama Item / Material *</th>
+                  <th style="width:90px;">Qty *</th>
+                  <th>Keterangan Item</th>
+                  <th style="width:50px;">Hapus</th>
+                </tr>
+              </thead>
+              <tbody id="modalItemsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeCreateDocModal()">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="submitCreateDocument()">
+          <i class="bi bi-check2-circle"></i> Simpan Surat Jalan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL EDIT BARIS ITEM -->
+  <div class="modal-backdrop" id="editRowModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-pencil-square"></i> Edit Baris Surat Jalan</h3>
+        <button type="button" class="modal-close" onclick="closeEditRowModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editRowIndex" />
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label>Tanggal</label>
+            <input type="date" id="editTanggal" />
+          </div>
+          <div class="form-field">
+            <label>No Document</label>
+            <input type="text" id="editNoDoc" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Item No (Material Code)</label>
+          <input type="text" list="materialCodeDatalist" id="editItemNo" placeholder="Pilih / ketik Item No..."
+            oninput="handleItemNoInput(this, true)" onchange="handleItemNoInput(this, true)" />
+        </div>
+        <div class="form-field">
+          <label>Item</label>
+          <input type="text" id="editItem" />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label>Qty</label>
+            <input type="number" id="editQty" />
+          </div>
+          <div class="form-field">
+            <label>Input</label>
+            <select id="editInputType">
+              <option value="Barang Masuk">Barang Masuk</option>
+              <option value="Barang Keluar">Barang Keluar</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label>Pengirim</label>
+            <input type="text" id="editPengirim" />
+          </div>
+          <div class="form-field">
+            <label>Tujuan</label>
+            <input type="text" id="editTujuan" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label>Keterangan</label>
+          <input type="text" id="editKeterangan" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeEditRowModal()">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="submitEditRow()">Simpan Perubahan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL API CONFIG (KHUSUS DEVELOPER) -->
+  <div class="modal-backdrop" id="apiConfigModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-gear"></i> Konfigurasi Endpoint GAS (Developer)</h3>
+        <button type="button" class="modal-close" onclick="closeApiConfigModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>URL Web App Google Apps Script</label>
+          <input type="url" id="gasApiUrlInput" placeholder="https://script.google.com/macros/s/...../exec" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfigModal()">Tutup</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan &amp; Muat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATALIST KATALOG MATERIAL CODE -->
+  <datalist id="materialCodeDatalist"></datalist>
+
+  <script src="app.js"></script>
+</body>
+</html>
