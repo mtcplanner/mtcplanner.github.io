@@ -52,6 +52,25 @@ function showToast(message, type = "success", title = "") {
   }, 3400);
 }
 
+// ============================================================
+// MODAL MAXIMIZE / RESTORE TOGGLE
+// ============================================================
+function toggleMaximizeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  const card = modal.querySelector(".modal-card");
+  if (!card) return;
+  card.classList.toggle("maximized");
+  const icon = modal.querySelector(".modal-toggle-max i");
+  if (icon) {
+    if (card.classList.contains("maximized")) {
+      icon.className = "bi bi-fullscreen-exit";
+    } else {
+      icon.className = "bi bi-arrows-fullscreen";
+    }
+  }
+}
+
 async function callGasApi(payload) {
   const url = getGasUrl();
   if (!url || url.includes("GANTI_DENGAN_ID_DEPLOYMENT")) {
@@ -94,9 +113,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function loadData(forceRefresh = false) {
   try {
-    const colSpan = Math.max(sheetColumns.length + 2, 10);
+    const colSpan = Math.max(sheetColumns.length + 2, 11);
     document.getElementById("rekapTableBody").innerHTML =
-      `<tr><td colspan="${colSpan}" class="empty-box">Memuat data Surat Jalan &amp; Material Code...</td></tr>`;
+      `<tr><td colspan="${colSpan}" class="empty-box">Memuat data silahkan tunggu...</td></tr>`;
 
     const res = await callGasApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : getFallbackColumns();
@@ -106,7 +125,7 @@ async function loadData(forceRefresh = false) {
     applyFilters();
     showToast("Data Surat Jalan berhasil dimuat.", "success");
   } catch (err) {
-    const colSpan = Math.max(sheetColumns.length + 2, 10);
+    const colSpan = Math.max(sheetColumns.length + 2, 11);
     document.getElementById("rekapTableBody").innerHTML =
       `<tr><td colspan="${colSpan}" class="empty-box" style="color:#dc2626;">${escapeHtml(err.message)}</td></tr>`;
     showToast(err.message, "error", "Koneksi Gagal");
@@ -118,14 +137,13 @@ function renderMaterialDatalist() {
   if (!dl) return;
   dl.innerHTML = materialCatalog
     .filter(m => m.code)
-    .map(m => `<option value="${escapeHtml(m.code)}" label="${escapeHtml(m.itemName)}"></option>`)
+    .map(m => `<option value="${escapeHtml(m.code)}" label="${escapeHtml(m.itemName)}${m.unit ? ` (${m.unit})` : ""}"></option>`)
     .join("");
 }
 
 function findMaterialMatch(rawVal) {
   const val = String(rawVal || "").trim().toLowerCase();
   if (!val) return null;
-  // Cocokkan persis ke kolom Material Code (Kolom A) terlebih dahulu, lalu fallback ke awal label jika dipilih dari datalist
   return (
     materialCatalog.find(m => m.code.toLowerCase() === val) ||
     materialCatalog.find(m => m.code.toLowerCase().startsWith(val) && val.length >= 2) ||
@@ -134,8 +152,7 @@ function findMaterialMatch(rawVal) {
 }
 
 /**
- * Mencocokkan Item No dengan kolom Material Code (Kolom A) spreadsheet Material Code,
- * lalu mengisi otomatis kolom Item No dan Item (ITEM NAME).
+ * Mencocokkan Item No dengan Material Code, lalu auto-isi Item (ITEM NAME) dan Satuan (UNIT)
  */
 function handleItemNoInput(inputEl, isEditModal = false) {
   if (!inputEl) return;
@@ -147,11 +164,15 @@ function handleItemNoInput(inputEl, isEditModal = false) {
   if (isEditModal) {
     const itemEl = document.getElementById("editItem");
     if (itemEl && matched.itemName) itemEl.value = matched.itemName;
+    const satuanEl = document.getElementById("editSatuan");
+    if (satuanEl && matched.unit) satuanEl.value = matched.unit;
   } else {
     const tr = inputEl.closest("tr");
     if (!tr) return;
     const itemEl = tr.querySelector(".inp-item");
     if (itemEl && matched.itemName) itemEl.value = matched.itemName;
+    const satuanEl = tr.querySelector(".inp-satuan");
+    if (satuanEl && matched.unit) satuanEl.value = matched.unit;
   }
 }
 
@@ -162,16 +183,18 @@ function getFallbackColumns() {
     { colIndex: 3, title: "Item No", key: "itemNo" },
     { colIndex: 4, title: "Item", key: "item" },
     { colIndex: 5, title: "Qty", key: "qty" },
-    { colIndex: 6, title: "Input", key: "inputType" },
-    { colIndex: 7, title: "Pengirim", key: "pengirim" },
-    { colIndex: 8, title: "Tujuan", key: "tujuan" },
-    { colIndex: 9, title: "Keterangan", key: "keterangan" }
+    { colIndex: 6, title: "Satuan", key: "satuan" },
+    { colIndex: 7, title: "Input", key: "inputType" },
+    { colIndex: 8, title: "Pengirim", key: "pengirim" },
+    { colIndex: 9, title: "Tujuan", key: "tujuan" },
+    { colIndex: 10, title: "Keterangan", key: "keterangan" }
   ];
 }
 
 function getRecordFieldValue(r, key) {
   if (r.fields && r.fields[key] !== undefined) return r.fields[key];
   if (key === "input") return r.inputType || "";
+  if (key === "unit") return r.satuan || "";
   return r[key] !== undefined ? r[key] : "";
 }
 
@@ -187,7 +210,7 @@ function applyFilters() {
     if (monthVal && !tgl.startsWith(monthVal)) return false;
     if (q) {
       const allVals = Object.values(r.fields || {
-        noDoc: r.noDoc, itemNo: r.itemNo, item: r.item, pengirim: r.pengirim, tujuan: r.tujuan, keterangan: r.keterangan
+        noDoc: r.noDoc, itemNo: r.itemNo, item: r.item, satuan: r.satuan, pengirim: r.pengirim, tujuan: r.tujuan, keterangan: r.keterangan
       }).join(" ").toLowerCase();
       if (!allVals.includes(q)) return false;
     }
@@ -288,9 +311,9 @@ function renderRekapTable() {
   const cols = sheetColumns.length > 0 ? sheetColumns : getFallbackColumns();
 
   thead.innerHTML =
-    `<th style="width:45px;">No</th>` +
-    cols.map(c => `<th>${escapeHtml(c.title)}</th>`).join("") +
-    `<th style="width:80px;">Aksi</th>`;
+    `<th style="width:40px;">No</th>` +
+    cols.map(c => `<th class="${c.key === "item" ? "th-item" : ""}">${escapeHtml(c.title)}</th>`).join("") +
+    `<th style="width:75px;">Aksi</th>`;
 
   if (filteredRecords.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${cols.length + 2}" class="empty-box">Belum ada data transaksi Surat Jalan.</td></tr>`;
@@ -301,7 +324,7 @@ function renderRekapTable() {
     const noDocVal = String(getRecordFieldValue(r, "noDoc") || "-");
     const cellsHtml = cols.map(c => {
       const val = getRecordFieldValue(r, c.key);
-      if (c.key === "tanggal" || c.key === "qty" || c.key === "itemNo") {
+      if (c.key === "tanggal" || c.key === "qty" || c.key === "itemNo" || c.key === "satuan") {
         return `<td class="text-center ${c.key === "qty" ? "fw-bold" : ""}">${escapeHtml(String(val ?? "-"))}</td>`;
       }
       if (c.key === "noDoc") {
@@ -313,7 +336,7 @@ function renderRekapTable() {
         return `<td class="text-center"><span class="pill-type ${isIn ? "pill-in" : "pill-out"}">${escapeHtml(strVal)}</span></td>`;
       }
       if (c.key === "item") {
-        return `<td class="fw-bold">${escapeHtml(String(val ?? ""))}</td>`;
+        return `<td class="fw-bold td-item">${escapeHtml(String(val ?? ""))}</td>`;
       }
       return `<td>${escapeHtml(String(val ?? ""))}</td>`;
     }).join("");
@@ -349,6 +372,7 @@ function renderDetailDocument() {
   const isIn = inputTypeVal.toLowerCase().includes("masuk");
   const totalQty = lines.reduce((acc, cur) => acc + (Number(getRecordFieldValue(cur, "qty")) || 0), 0);
   const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
+  const hasSatuanCol = sheetColumns.some(c => c.key === "satuan");
 
   container.innerHTML = `
     <div class="doc-summary-box">
@@ -375,10 +399,11 @@ function renderDetailDocument() {
     <table class="sj-table">
       <thead>
         <tr>
-          <th style="width:45px;">No</th>
+          <th style="width:40px;">No</th>
           ${hasItemNoCol ? `<th style="width:130px;">Item No</th>` : ""}
-          <th>Nama Item / Barang</th>
-          <th style="width:90px;">Qty</th>
+          <th style="min-width:250px;">Nama Item / Barang</th>
+          <th style="width:80px;">Qty</th>
+          ${hasSatuanCol ? `<th style="width:85px;">Satuan</th>` : ""}
           <th>Keterangan</th>
           <th class="no-print" style="width:75px;">Aksi</th>
         </tr>
@@ -388,8 +413,9 @@ function renderDetailDocument() {
           <tr>
             <td class="text-center">${idx + 1}</td>
             ${hasItemNoCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "itemNo") || ""))}</td>` : ""}
-            <td class="fw-bold">${escapeHtml(String(getRecordFieldValue(ln, "item") || ""))}</td>
+            <td class="fw-bold td-item">${escapeHtml(String(getRecordFieldValue(ln, "item") || ""))}</td>
             <td class="text-center fw-bold">${Number(getRecordFieldValue(ln, "qty")) || 0}</td>
+            ${hasSatuanCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "satuan") || ""))}</td>` : ""}
             <td>${escapeHtml(String(getRecordFieldValue(ln, "keterangan") || ""))}</td>
             <td class="text-center no-print">
               <button type="button" class="btn-icon edit" onclick="openEditRowModal(${ln.rowIndex})"><i class="bi bi-pencil-square"></i></button>
@@ -403,7 +429,7 @@ function renderDetailDocument() {
 }
 
 // ============================================================
-// MODAL CREATE SURAT JALAN (ITEM NO OTOMATIS + AUTO-FILL ITEM)
+// MODAL CREATE SURAT JALAN
 // ============================================================
 function openCreateDocModal() {
   document.getElementById("docTanggal").value = new Date().toISOString().split("T")[0];
@@ -411,17 +437,19 @@ function openCreateDocModal() {
   document.getElementById("docInputType").value = "Barang Masuk";
   document.getElementById("docPengirim").value = "";
   document.getElementById("docTujuan").value = "";
-  document.getElementById("docKeterangan").value = "";
 
   const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
+  const hasSatuanCol = sheetColumns.some(c => c.key === "satuan");
   const headTr = document.querySelector("#createDocModal .line-items-box thead tr");
+
   headTr.innerHTML =
     `<th style="width:40px;">No</th>` +
-    (hasItemNoCol ? `<th style="width:140px;">Item No</th>` : "") +
-    `<th>Nama Item / Material *</th>` +
-    `<th style="width:90px;">Qty *</th>` +
+    (hasItemNoCol ? `<th style="width:130px;">Item No</th>` : "") +
+    `<th style="min-width:260px;">Nama Item / Material *</th>` +
+    `<th style="width:80px;">Qty *</th>` +
+    (hasSatuanCol ? `<th style="width:85px;">Satuan</th>` : "") +
     `<th>Keterangan Item</th>` +
-    `<th style="width:50px;">Hapus</th>`;
+    `<th style="width:45px;">Hapus</th>`;
 
   const tbody = document.getElementById("modalItemsBody");
   tbody.innerHTML = "";
@@ -437,6 +465,8 @@ function addModalItemRow() {
   const tbody = document.getElementById("modalItemsBody");
   const idx = tbody.children.length + 1;
   const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
+  const hasSatuanCol = sheetColumns.some(c => c.key === "satuan");
+
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td class="text-center row-num">${idx}</td>
@@ -445,9 +475,12 @@ function addModalItemRow() {
         <input type="text" list="materialCodeDatalist" class="modal-input inp-itemno text-center" placeholder="Pilih / ketik Item No..."
           oninput="handleItemNoInput(this, false)" onchange="handleItemNoInput(this, false)" />
       </td>` : ""}
-    <td><input type="text" class="modal-input inp-item" placeholder="Nama barang / sparepart..." /></td>
+    <td>
+      <textarea class="modal-input inp-item" rows="1" placeholder="Nama barang (s/d 69+ karakter)..."></textarea>
+    </td>
     <td><input type="number" class="modal-input inp-qty text-center" value="1" min="0" step="any" /></td>
-    <td><input type="text" class="modal-input inp-ket" placeholder="Keterangan item..." /></td>
+    ${hasSatuanCol ? `<td><input type="text" class="modal-input inp-satuan text-center" placeholder="PCS..." /></td>` : ""}
+    <td><input type="text" class="modal-input inp-ket" placeholder="Keterangan..." /></td>
     <td class="text-center"><button type="button" class="btn-icon del" onclick="removeModalItemRow(this)"><i class="bi bi-x-lg"></i></button></td>
   `;
   tbody.appendChild(tr);
@@ -468,7 +501,6 @@ async function submitCreateDocument() {
   const inputType = document.getElementById("docInputType").value;
   const pengirim = document.getElementById("docPengirim").value.trim();
   const tujuan = document.getElementById("docTujuan").value.trim();
-  const keterangan = document.getElementById("docKeterangan").value.trim();
 
   if (!tanggal || !noDoc) return showToast("Tanggal dan No Document wajib diisi.", "error");
 
@@ -478,9 +510,12 @@ async function submitCreateDocument() {
     const itemNo = itemNoEl ? itemNoEl.value.trim() : "";
     const item = tr.querySelector(".inp-item").value.trim();
     const qty = Number(tr.querySelector(".inp-qty").value) || 0;
+    const satuanEl = tr.querySelector(".inp-satuan");
+    const satuan = satuanEl ? satuanEl.value.trim() : "";
     const ket = tr.querySelector(".inp-ket").value.trim();
+
     if (item || itemNo) {
-      items.push({ item, itemNo, qty, keterangan: ket, fields: { itemNo } });
+      items.push({ item, itemNo, qty, satuan, keterangan: ket, fields: { itemNo, satuan } });
     }
   });
 
@@ -492,7 +527,7 @@ async function submitCreateDocument() {
   try {
     const res = await callGasApi({
       action: "createDocument",
-      doc: { tanggal, noDoc, inputType, pengirim, tujuan, keterangan, items }
+      doc: { tanggal, noDoc, inputType, pengirim, tujuan, items }
     });
     Swal.close();
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : sheetColumns;
@@ -523,12 +558,13 @@ function openEditRowModal(rowIndex) {
   const itemNoEl = document.getElementById("editItemNo");
   const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
   if (itemNoEl) {
-    itemNoEl.parentElement.style.display = hasItemNoCol ? "" : "none";
+    document.getElementById("editItemNoWrap").style.display = hasItemNoCol ? "" : "none";
     itemNoEl.value = getRecordFieldValue(row, "itemNo") || "";
   }
 
   document.getElementById("editItem").value = getRecordFieldValue(row, "item");
   document.getElementById("editQty").value = getRecordFieldValue(row, "qty");
+  document.getElementById("editSatuan").value = getRecordFieldValue(row, "satuan") || "";
   document.getElementById("editInputType").value = getRecordFieldValue(row, "inputType") || getRecordFieldValue(row, "input") || "Barang Masuk";
   document.getElementById("editPengirim").value = getRecordFieldValue(row, "pengirim");
   document.getElementById("editTujuan").value = getRecordFieldValue(row, "tujuan");
@@ -543,6 +579,8 @@ function closeEditRowModal() {
 async function submitEditRow() {
   const itemNoEl = document.getElementById("editItemNo");
   const itemNoVal = itemNoEl ? itemNoEl.value.trim() : "";
+  const satuanVal = document.getElementById("editSatuan").value.trim();
+
   const row = {
     rowIndex: Number(document.getElementById("editRowIndex").value),
     tanggal: document.getElementById("editTanggal").value,
@@ -550,11 +588,12 @@ async function submitEditRow() {
     itemNo: itemNoVal,
     item: document.getElementById("editItem").value.trim(),
     qty: Number(document.getElementById("editQty").value) || 0,
+    satuan: satuanVal,
     inputType: document.getElementById("editInputType").value,
     pengirim: document.getElementById("editPengirim").value.trim(),
     tujuan: document.getElementById("editTujuan").value.trim(),
     keterangan: document.getElementById("editKeterangan").value.trim(),
-    fields: { itemNo: itemNoVal }
+    fields: { itemNo: itemNoVal, satuan: satuanVal }
   };
 
   closeEditRowModal();
