@@ -90,6 +90,8 @@ html, body {
 .btn-primary:hover { transform: translateY(-1px); }
 .btn-success { background: #16a34a; color: #ffffff; }
 .btn-success:hover { background: #15803d; }
+.btn-danger { background: #ef4444; color: #ffffff; }
+.btn-danger:hover { background: #dc2626; }
 .btn-ghost { background: #ffffff; color: var(--text-secondary); border: 1px solid #cbd5e1; }
 .btn-ghost:hover { background: #f8fafc; color: var(--text-primary); }
 .btn-icon { background: transparent; border: none; cursor: pointer; padding: 3px 5px; border-radius: 4px; font-size: 12px; }
@@ -203,6 +205,20 @@ table.sj-table tbody td {
   vertical-align: middle; font-weight: 500;
 }
 table.sj-table tbody tr:hover td { background-color: #f0f9ff; }
+table.sj-table tbody tr.clickable-row { cursor: pointer; }
+table.sj-table tbody tr.clickable-row:focus-visible td {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.record-item-lines { display: flex; flex-direction: column; }
+.record-item-line {
+  width: 100%; padding: 2px 0; border: 0; background: transparent; color: inherit;
+  font: inherit; text-align: inherit; white-space: normal; word-break: break-word; cursor: pointer;
+}
+.record-item-line + .record-item-line { border-top: 1px solid #e2e8f0; }
+.record-item-line:hover, .record-item-line:focus-visible {
+  color: var(--primary); text-decoration: underline;
+}
 
 /* WRAP TEXT KHUSUS SEL ITEM / NAMA BARANG (HINGGA 69+ KARAKTER) */
 table.sj-table td.td-item, table.sj-table th.th-item {
@@ -311,6 +327,10 @@ textarea.modal-input.inp-item {
 
 .modal-footer {
   padding: 10px 16px; background: #f8fafc; border-top: 1px solid var(--border-color);
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+}
+.edit-row-footer { justify-content: space-between; }
+.modal-footer-actions {
   display: flex; justify-content: flex-end; gap: 8px;
 }
 

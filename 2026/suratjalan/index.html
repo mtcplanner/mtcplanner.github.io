@@ -113,7 +113,6 @@
                 <th style="width:120px;">Pengirim</th>
                 <th style="width:120px;">Tujuan</th>
                 <th>Keterangan</th>
-                <th style="width:75px;">Aksi</th>
               </tr>
             </thead>
             <tbody id="rekapTableBody"></tbody>
@@ -278,9 +277,14 @@
           <input type="text" id="editKeterangan" />
         </div>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" onclick="closeEditRowModal()">Batal</button>
-        <button type="button" class="btn btn-primary" onclick="submitEditRow()">Simpan Perubahan</button>
+      <div class="modal-footer edit-row-footer">
+        <button type="button" class="btn btn-danger" onclick="confirmDeleteRow(Number(document.getElementById('editRowIndex').value), true)">
+          <i class="bi bi-trash3"></i> Hapus
+        </button>
+        <div class="modal-footer-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeEditRowModal()">Batal</button>
+          <button type="button" class="btn btn-primary" onclick="submitEditRow()">Simpan Perubahan</button>
+        </div>
       </div>
     </div>
   </div>

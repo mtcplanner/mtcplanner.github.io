@@ -237,7 +237,8 @@ function updateKpis() {
   document.getElementById("kpiTotalDoc").textContent = uniqueDocs.size;
   document.getElementById("kpiMasuk").textContent = masukCount;
   document.getElementById("kpiKeluar").textContent = keluarCount;
-  document.getElementById("sjSummaryMeta").textContent = `• ${filteredRecords.length} Baris Transaksi`;
+  document.getElementById("sjSummaryMeta").textContent =
+    `• ${filteredRecords.length} Item pada ${uniqueDocs.size} Dokumen`;
 }
 
 function renderDocList() {
@@ -309,49 +310,82 @@ function renderRekapTable() {
   const thead = table.querySelector("thead tr");
   const tbody = document.getElementById("rekapTableBody");
   const cols = sheetColumns.length > 0 ? sheetColumns : getFallbackColumns();
+  const itemColumnKeys = new Set(["itemNo", "item", "qty", "satuan", "keterangan"]);
+  const recordGroups = new Map();
+
+  filteredRecords.forEach((record, index) => {
+    const noDoc = String(getRecordFieldValue(record, "noDoc") || "").trim();
+    const key = noDoc ? `doc:${noDoc}` : `row:${record.rowIndex ?? index}`;
+    if (!recordGroups.has(key)) recordGroups.set(key, []);
+    recordGroups.get(key).push(record);
+  });
+  const groups = Array.from(recordGroups.values());
 
   thead.innerHTML =
     `<th style="width:40px;">No</th>` +
-    cols.map(c => `<th class="${c.key === "item" ? "th-item" : ""}">${escapeHtml(c.title)}</th>`).join("") +
-    `<th style="width:75px;">Aksi</th>`;
+    cols.map(c => `<th class="${c.key === "item" ? "th-item" : ""}">${escapeHtml(c.title)}</th>`).join("");
 
-  if (filteredRecords.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="${cols.length + 2}" class="empty-box">Belum ada data transaksi Surat Jalan.</td></tr>`;
+  if (groups.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${cols.length + 1}" class="empty-box">Belum ada data transaksi Surat Jalan.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = filteredRecords.map((r, idx) => {
+  tbody.innerHTML = groups.map((items, idx) => {
+    const r = items[0];
     const noDocVal = String(getRecordFieldValue(r, "noDoc") || "-");
     const cellsHtml = cols.map(c => {
       const val = getRecordFieldValue(r, c.key);
-      if (c.key === "tanggal" || c.key === "qty" || c.key === "itemNo" || c.key === "satuan") {
-        return `<td class="text-center ${c.key === "qty" ? "fw-bold" : ""}">${escapeHtml(String(val ?? "-"))}</td>`;
+      if (itemColumnKeys.has(c.key)) {
+        const values = items.map(itemRecord => {
+          const itemValue = getRecordFieldValue(itemRecord, c.key);
+          const text = c.key === "item" || c.key === "keterangan"
+            ? String(itemValue ?? "")
+            : c.key === "qty"
+              ? String(itemValue ?? "-")
+              : String(itemValue || "-");
+          return `
+            <button type="button" class="record-item-line" title="Klik untuk mengedit item ini"
+              onclick="event.stopPropagation(); openEditRowModal(${itemRecord.rowIndex})"
+              onkeydown="event.stopPropagation()">${escapeHtml(text)}</button>
+          `;
+        }).join("");
+        const classes = [
+          c.key === "item" ? "td-item fw-bold" : "",
+          ["itemNo", "qty", "satuan"].includes(c.key) ? "text-center" : "",
+          c.key === "qty" ? "fw-bold" : ""
+        ].filter(Boolean).join(" ");
+        return `<td class="${classes}"><div class="record-item-lines">${values}</div></td>`;
+      }
+      if (c.key === "tanggal") {
+        return `<td class="text-center">${escapeHtml(String(val ?? "-"))}</td>`;
       }
       if (c.key === "noDoc") {
-        return `<td class="text-center fw-bold" style="color:var(--primary); cursor:pointer;" onclick="selectDocument('${escapeHtml(noDocVal)}')">${escapeHtml(noDocVal)}</td>`;
+        return `<td class="text-center fw-bold" style="color:var(--primary);">${escapeHtml(noDocVal)}</td>`;
       }
       if (c.key === "inputType" || c.key === "input") {
         const strVal = String(val || "Barang Masuk");
         const isIn = strVal.toLowerCase().includes("masuk");
         return `<td class="text-center"><span class="pill-type ${isIn ? "pill-in" : "pill-out"}">${escapeHtml(strVal)}</span></td>`;
       }
-      if (c.key === "item") {
-        return `<td class="fw-bold td-item">${escapeHtml(String(val ?? ""))}</td>`;
-      }
       return `<td>${escapeHtml(String(val ?? ""))}</td>`;
     }).join("");
 
     return `
-      <tr>
+      <tr class="clickable-row" tabindex="0" title="Klik untuk mengedit item pertama; klik nilai item untuk memilih item tertentu"
+        onclick="openEditRowModal(${r.rowIndex})"
+        onkeydown="handleRecordRowKeydown(event, ${r.rowIndex})">
         <td class="text-center">${idx + 1}</td>
         ${cellsHtml}
-        <td class="text-center">
-          <button type="button" class="btn-icon edit" onclick="openEditRowModal(${r.rowIndex})" title="Edit Baris"><i class="bi bi-pencil-square"></i></button>
-          <button type="button" class="btn-icon del" onclick="confirmDeleteRow(${r.rowIndex})" title="Hapus Baris"><i class="bi bi-trash3"></i></button>
-        </td>
       </tr>
     `;
   }).join("");
+}
+
+function handleRecordRowKeydown(event, rowIndex) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openEditRowModal(rowIndex);
+  }
 }
 
 function renderDetailDocument() {
@@ -405,22 +439,19 @@ function renderDetailDocument() {
           <th style="width:80px;">Qty</th>
           ${hasSatuanCol ? `<th style="width:85px;">Satuan</th>` : ""}
           <th>Keterangan</th>
-          <th class="no-print" style="width:75px;">Aksi</th>
         </tr>
       </thead>
       <tbody>
         ${lines.map((ln, idx) => `
-          <tr>
+          <tr class="clickable-row" tabindex="0" title="Klik untuk melihat atau mengedit data"
+            onclick="openEditRowModal(${ln.rowIndex})"
+            onkeydown="handleRecordRowKeydown(event, ${ln.rowIndex})">
             <td class="text-center">${idx + 1}</td>
             ${hasItemNoCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "itemNo") || ""))}</td>` : ""}
             <td class="fw-bold td-item">${escapeHtml(String(getRecordFieldValue(ln, "item") || ""))}</td>
             <td class="text-center fw-bold">${Number(getRecordFieldValue(ln, "qty")) || 0}</td>
             ${hasSatuanCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "satuan") || ""))}</td>` : ""}
             <td>${escapeHtml(String(getRecordFieldValue(ln, "keterangan") || ""))}</td>
-            <td class="text-center no-print">
-              <button type="button" class="btn-icon edit" onclick="openEditRowModal(${ln.rowIndex})"><i class="bi bi-pencil-square"></i></button>
-              <button type="button" class="btn-icon del" onclick="confirmDeleteRow(${ln.rowIndex})"><i class="bi bi-trash3"></i></button>
-            </td>
           </tr>
         `).join("")}
       </tbody>
@@ -611,7 +642,7 @@ async function submitEditRow() {
   }
 }
 
-function confirmDeleteRow(rowIndex) {
+function confirmDeleteRow(rowIndex, closeModalOnSuccess = false) {
   Swal.fire({
     title: "Hapus Baris?",
     text: "Data baris ini akan dihapus permanen dari sheet Data.",
@@ -625,6 +656,7 @@ function confirmDeleteRow(rowIndex) {
     try {
       const res = await callGasApi({ action: "deleteRow", rowIndex });
       Swal.close();
+      if (closeModalOnSuccess) closeEditRowModal();
       allRecords = res.records || [];
       applyFilters();
       showToast("Baris berhasil dihapus.", "success");
