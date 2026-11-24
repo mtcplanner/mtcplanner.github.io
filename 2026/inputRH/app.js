@@ -1,7 +1,7 @@
 // ============================================================
 // KONFIGURASI ENDPOINT GOOGLE APPS SCRIPT
 // ============================================================
-const DEFAULT_GAS_URL = "https://script.google.com/macros/s/GANTI_DENGAN_ID_DEPLOYMENT_ANDA/exec";
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbybA4vjnZb-79VAHSO0Gb7fQCS6JSxjdQN8SF-fJhOeVIe2IFMbb2OxeP7rAc67T20tww/exec";
 const STORAGE_KEY_API = "MTC_INPUT_RH_GAS_URL";
 
 let sheetColumns = [];
