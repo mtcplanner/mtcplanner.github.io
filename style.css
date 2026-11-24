@@ -262,7 +262,10 @@ body, html { height: 100%; overflow: hidden; background: var(--bg-body); color: 
 .modal-box {
   background: #ffffff; border-radius: var(--radius-xl); padding: 28px 24px; width: 100%; max-width: 400px;
   box-shadow: 0 20px 40px rgba(0,0,0,0.2); text-align: center; border: 1px solid var(--border-color);
+  max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto;
+  scrollbar-width: none; -ms-overflow-style: none;
 }
+.modal-box::-webkit-scrollbar { display: none; }
 .modal-box.small-box { max-width: 320px; }
 
 .modal-header-icon {
