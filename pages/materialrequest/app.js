@@ -9,10 +9,12 @@ let allRecords = [];
 let filteredRecords = [];
 let dropdownLists = {};
 let materialCatalog = []; // [{ code, partNo, itemName, itemSize, unit }]
+let fixedAssetCatalog = []; // [{ equipmentNo, equipmentName, type, serialNo }]
 let selectedNoMr = null;
 let currentView = "all"; // "all" | "detail"
 let isInlineEditingDoc = false;
 let activeSuggestContext = null; // { inputEl, onSelect }
+let activeAssetSuggestContext = null; // { inputEl, onSelect }
 
 function getGasUrl() {
   const saved = (localStorage.getItem(STORAGE_KEY_API) || "").trim();
@@ -117,9 +119,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("click", (e) => {
     const popup = document.getElementById("materialSuggestPopup");
-    if (!popup || popup.style.display === "none") return;
-    if (!popup.contains(e.target) && (!activeSuggestContext || e.target !== activeSuggestContext.inputEl)) {
-      hideMaterialSuggestPopup();
+    if (popup && popup.style.display !== "none") {
+      if (!popup.contains(e.target) && (!activeSuggestContext || e.target !== activeSuggestContext.inputEl)) {
+        hideMaterialSuggestPopup();
+      }
+    }
+
+    const assetPopup = document.getElementById("assetSuggestPopup");
+    if (assetPopup && assetPopup.style.display !== "none") {
+      if (!assetPopup.contains(e.target) && (!activeAssetSuggestContext || e.target !== activeAssetSuggestContext.inputEl)) {
+        hideAssetSuggestPopup();
+      }
     }
   });
 });
@@ -127,17 +137,21 @@ document.addEventListener("DOMContentLoaded", () => {
 async function loadData(forceRefresh = false) {
   try {
     document.getElementById("entryTableBody").innerHTML =
-      `<tr><td colspan="21" class="empty-box">Memuat data Material Request, Dropdown &amp; Katalog Material Code...</td></tr>`;
+      `<tr><td colspan="21" class="empty-box">Memuat data Material Request, Dropdown, Katalog Material Code &amp; Fixed Asset...</td></tr>`;
 
     const res = await callGasApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
     entryColumns = Array.isArray(res.columns) ? res.columns : [];
     allRecords = Array.isArray(res.records) ? res.records : [];
     dropdownLists = res.dropdowns || {};
     materialCatalog = Array.isArray(res.materials) ? res.materials : [];
+    fixedAssetCatalog = Array.isArray(res.assets) ? res.assets : [];
 
     populateAllDropdowns();
     applyFilters();
-    showToast(`Data dimuat (${materialCatalog.length} katalog Material Code aktif).`, "success");
+    showToast(
+      `Data dimuat (${materialCatalog.length} Material Code • ${fixedAssetCatalog.length} Fixed Asset aktif).`,
+      "success"
+    );
   } catch (err) {
     document.getElementById("entryTableBody").innerHTML =
       `<tr><td colspan="21" class="empty-box" style="color:#dc2626;">${escapeHtml(err.message)}</td></tr>`;
@@ -205,6 +219,136 @@ function syncRowConditionNoPr(condSelectEl, noPrInputEl) {
 }
 
 // ============================================================
+// AUTOCOMPLETE & VALIDASI KETAT KATALOG FIXED ASSET
+// ============================================================
+function searchFixedAssetCatalog(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return fixedAssetCatalog.slice(0, 35);
+  return fixedAssetCatalog
+    .filter(a =>
+      String(a.equipmentNo || "").toLowerCase().includes(q) ||
+      String(a.equipmentName || "").toLowerCase().includes(q) ||
+      String(a.type || "").toLowerCase().includes(q) ||
+      String(a.serialNo || "").toLowerCase().includes(q)
+    )
+    .slice(0, 40);
+}
+
+function getOrCreateAssetPopup() {
+  let popup = document.getElementById("assetSuggestPopup");
+  if (!popup) {
+    popup = document.createElement("div");
+    popup.id = "assetSuggestPopup";
+    popup.className = "asset-suggest-popup";
+    popup.style.display = "none";
+    document.body.appendChild(popup);
+  }
+  return popup;
+}
+
+function showAssetSuggestPopup(inputEl, onSelectCallback) {
+  const popup = getOrCreateAssetPopup();
+  if (!inputEl) return;
+
+  hideMaterialSuggestPopup();
+  activeAssetSuggestContext = { inputEl, onSelect: onSelectCallback };
+  const matches = searchFixedAssetCatalog(inputEl.value);
+
+  const rect = inputEl.getBoundingClientRect();
+  popup.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 380))}px`;
+  popup.style.top = `${Math.min(rect.bottom + 3, window.innerHeight - 250)}px`;
+
+  if (matches.length === 0) {
+    popup.innerHTML = `<div class="mat-suggest-empty">Tidak ditemukan di database Fixed Asset (tidak dapat diinput).</div>`;
+  } else {
+    popup.innerHTML = matches.map((a, idx) => `
+      <div class="mat-suggest-item" data-idx="${idx}" onmousedown="selectAssetFromPopup(${idx})">
+        <div class="mat-suggest-top">
+          <span class="mat-suggest-code">${escapeHtml(a.equipmentNo || "-")}</span>
+          <span class="mat-suggest-size">${escapeHtml([a.type, a.serialNo].filter(Boolean).join(" • ") || "Fixed Asset")}</span>
+        </div>
+        <div class="mat-suggest-name">${escapeHtml(a.equipmentName || "-")}</div>
+      </div>
+    `).join("");
+  }
+
+  popup._currentMatches = matches;
+  popup.style.display = "block";
+}
+
+function hideAssetSuggestPopup() {
+  const popup = document.getElementById("assetSuggestPopup");
+  if (popup) popup.style.display = "none";
+  activeAssetSuggestContext = null;
+}
+
+function selectAssetFromPopup(matchIndex) {
+  const popup = document.getElementById("assetSuggestPopup");
+  if (!popup || !popup._currentMatches || !activeAssetSuggestContext) return;
+  const asset = popup._currentMatches[matchIndex];
+  if (!asset) return;
+  if (typeof activeAssetSuggestContext.onSelect === "function") {
+    activeAssetSuggestContext.onSelect(asset);
+  }
+  hideAssetSuggestPopup();
+}
+
+function validateStrictEquipmentPair(eqNoVal, eqNameVal) {
+  const noClean = String(eqNoVal || "").trim();
+  const nameClean = String(eqNameVal || "").trim().toLowerCase();
+  if (!noClean && !nameClean) return null;
+
+  return fixedAssetCatalog.find(a => {
+    const aNo = String(a.equipmentNo || "").trim();
+    const aName = String(a.equipmentName || "").trim().toLowerCase();
+    if (noClean && nameClean) return aNo === noClean && aName === nameClean;
+    if (noClean) return aNo === noClean;
+    return aName === nameClean;
+  }) || null;
+}
+
+function bindEquipmentPairInputs(eqNoEl, eqNameEl) {
+  if (!eqNoEl || !eqNameEl) return;
+
+  const applyAsset = (asset) => {
+    eqNoEl.value = String(asset.equipmentNo || "").trim();
+    eqNameEl.value = String(asset.equipmentName || "").trim();
+    eqNoEl.classList.remove("invalid-match");
+    eqNameEl.classList.remove("invalid-match");
+    eqNoEl.classList.add("valid-match");
+    eqNameEl.classList.add("valid-match");
+  };
+
+  eqNoEl.addEventListener("focus", () => showAssetSuggestPopup(eqNoEl, applyAsset));
+  eqNoEl.addEventListener("input", () => {
+    const exactNo = fixedAssetCatalog.find(a => String(a.equipmentNo || "").trim() === String(eqNoEl.value).trim());
+    if (exactNo) {
+      applyAsset(exactNo);
+    } else {
+      eqNoEl.classList.remove("valid-match");
+      eqNameEl.value = "";
+      eqNameEl.classList.remove("valid-match");
+    }
+    showAssetSuggestPopup(eqNoEl, applyAsset);
+  });
+
+  eqNameEl.addEventListener("focus", () => showAssetSuggestPopup(eqNameEl, applyAsset));
+  eqNameEl.addEventListener("input", () => {
+    const exactName = fixedAssetCatalog.find(
+      a => String(a.equipmentName || "").trim().toLowerCase() === String(eqNameEl.value).trim().toLowerCase()
+    );
+    if (exactName) {
+      applyAsset(exactName);
+    } else {
+      eqNameEl.classList.remove("valid-match");
+      eqNoEl.value = "";
+      eqNoEl.classList.remove("valid-match");
+    }
+    showAssetSuggestPopup(eqNameEl, applyAsset);
+  });
+}
+
+// ============================================================
 // AUTOCOMPLETE & VALIDASI KETAT KATALOG MATERIAL CODE
 // ============================================================
 function searchMaterialCatalog(query) {
@@ -224,6 +368,7 @@ function showMaterialSuggestPopup(inputEl, onSelectCallback) {
   const popup = document.getElementById("materialSuggestPopup");
   if (!popup || !inputEl) return;
 
+  hideAssetSuggestPopup();
   activeSuggestContext = { inputEl, onSelect: onSelectCallback };
   const matches = searchMaterialCatalog(inputEl.value);
 
@@ -451,11 +596,6 @@ function getPriorityPillClass(priority) {
   return "pill-info";
 }
 
-/**
- * Render tabel Semua Entry MR dengan gabungan (rowSpan) pada informasi header dokumen
- * untuk No Material Request yang sama & item > 1. Tidak ada tombol Update di kolom aksi.
- * Klik baris mana pun langsung melompat ke tab Rincian Dokumen MR.
- */
 function formatWrapCell(value, maxLen = 69, extraAttrs = "", extraClasses = "") {
   const str = String(value ?? "");
   const isLong = str.length > maxLen;
@@ -547,6 +687,7 @@ function startInlineEditDocument() {
 function cancelInlineEditDocument() {
   isInlineEditingDoc = false;
   hideMaterialSuggestPopup();
+  hideAssetSuggestPopup();
   renderMrDetail();
 }
 
@@ -574,7 +715,6 @@ function renderMrDetail() {
   const head = lines[0];
 
   if (!isInlineEditingDoc) {
-    // MODE BACA (NO CONDITION / NO PR / STATUS DI HEADER)
     container.innerHTML = `
       <div class="doc-summary-box">
         <div>
@@ -645,7 +785,6 @@ function renderMrDetail() {
     return;
   }
 
-  // MODE INLINE EDIT LANGSUNG DI RINCIAN DOKUMEN MR (+ TAMBAH ITEM KE MR YANG SAMA)
   const costCenters = getDropdownOptions("costCenter", ["Maintenance", "Welder"]);
   const priorities = getDropdownOptions("priorities", ["P1-Low", "P2-Medium", "P3-Urgent"]);
   const events = getDropdownOptions("event", ["Repair", "Service", "Overhaul", "Predictive", "Backlog", "Idle Asset"]);
@@ -676,12 +815,12 @@ function renderMrDetail() {
         <input type="text" id="inlNoMr" class="inline-input fw-bold" value="${escapeHtml(head.noMr || "")}" />
       </div>
       <div class="meta-item">
-        <span>Equipment No</span>
-        <input type="text" id="inlEqNo" class="inline-input" value="${escapeHtml(head.equipmentNo || "")}" />
+        <span>Equipment No *</span>
+        <input type="text" id="inlEqNo" class="inline-input" value="${escapeHtml(head.equipmentNo || "")}" placeholder="Pilih Equipment No..." autocomplete="off" />
       </div>
       <div class="meta-item">
-        <span>Equipment Name</span>
-        <input type="text" id="inlEqName" class="inline-input" value="${escapeHtml(head.equipmentName || "")}" />
+        <span>Equipment Name *</span>
+        <input type="text" id="inlEqName" class="inline-input" value="${escapeHtml(head.equipmentName || "")}" placeholder="Pilih Equipment Name..." autocomplete="off" />
       </div>
       <div class="meta-item">
         <span>PIC Request</span>
@@ -736,7 +875,14 @@ function renderMrDetail() {
     </table>
   `;
 
-  // Bind katalog & aturan On Stock pada setiap baris existing
+  const inlEqNo = document.getElementById("inlEqNo");
+  const inlEqName = document.getElementById("inlEqName");
+  bindEquipmentPairInputs(inlEqNo, inlEqName);
+  if (validateStrictEquipmentPair(inlEqNo.value, inlEqName.value)) {
+    inlEqNo.classList.add("valid-match");
+    inlEqName.classList.add("valid-match");
+  }
+
   const conditionsList = conditions;
   document.querySelectorAll("#inlineItemsBody tr").forEach(tr => {
     bindInlineRowEvents(tr, conditionsList);
@@ -845,8 +991,10 @@ function removeInlineItemRow(btn) {
 async function saveInlineDocumentEdits() {
   const date = document.getElementById("inlDate").value;
   const noMr = document.getElementById("inlNoMr").value.trim();
-  const equipmentNo = document.getElementById("inlEqNo").value.trim();
-  const equipmentName = document.getElementById("inlEqName").value.trim();
+  const eqNoEl = document.getElementById("inlEqNo");
+  const eqNameEl = document.getElementById("inlEqName");
+  const equipmentNo = eqNoEl.value.trim();
+  const equipmentName = eqNameEl.value.trim();
   const picRequest = document.getElementById("inlPic").value.trim();
   const costCenter = document.getElementById("inlCostCenter").value;
   const priorities = document.getElementById("inlPriorities").value;
@@ -855,6 +1003,17 @@ async function saveInlineDocumentEdits() {
 
   if (!date || !noMr || !picRequest) {
     return showToast("Date, No Material Request, dan PIC Request wajib diisi.", "error");
+  }
+
+  const validAsset = validateStrictEquipmentPair(equipmentNo, equipmentName);
+  if (!validAsset) {
+    eqNoEl.classList.add("invalid-match");
+    eqNameEl.classList.add("invalid-match");
+    return showToast(
+      `Equipment "${equipmentNo} - ${equipmentName}" tidak terdaftar di database Fixed Asset.`,
+      "error",
+      "Validasi Fixed Asset"
+    );
   }
 
   const trs = Array.from(document.querySelectorAll("#inlineItemsBody tr"));
@@ -923,7 +1082,17 @@ async function saveInlineDocumentEdits() {
     const res = await callGasApi({
       action: "saveDocumentEdits",
       docUpdate: {
-        header: { date, noMr, equipmentNo, equipmentName, picRequest, costCenter, priorities, event, description },
+        header: {
+          date,
+          noMr,
+          equipmentNo: validAsset.equipmentNo,
+          equipmentName: validAsset.equipmentName,
+          picRequest,
+          costCenter,
+          priorities,
+          event,
+          description
+        },
         existingItems,
         newItems,
         deletedRowIndices: deletedIndices
@@ -933,6 +1102,7 @@ async function saveInlineDocumentEdits() {
     allRecords = res.records || [];
     if (res.dropdowns) dropdownLists = res.dropdowns;
     if (Array.isArray(res.materials)) materialCatalog = res.materials;
+    if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
     selectedNoMr = noMr;
     isInlineEditingDoc = false;
     applyFilters();
@@ -955,8 +1125,15 @@ function openCreateMrModal() {
   document.getElementById("mrDate").value = new Date().toISOString().split("T")[0];
   document.getElementById("mrNo").value = "";
   document.getElementById("mrPic").value = "";
-  document.getElementById("mrEqNo").value = "";
-  document.getElementById("mrEqName").value = "";
+
+  const eqNoEl = document.getElementById("mrEqNo");
+  const eqNameEl = document.getElementById("mrEqName");
+  eqNoEl.value = "";
+  eqNameEl.value = "";
+  eqNoEl.classList.remove("valid-match", "invalid-match");
+  eqNameEl.classList.remove("valid-match", "invalid-match");
+  bindEquipmentPairInputs(eqNoEl, eqNameEl);
+
   document.getElementById("mrDescription").value = "";
 
   const tbody = document.getElementById("mrLinesBody");
@@ -967,6 +1144,7 @@ function openCreateMrModal() {
 
 function closeCreateMrModal() {
   hideMaterialSuggestPopup();
+  hideAssetSuggestPopup();
   const card = document.getElementById("createMrModalCard");
   const backdrop = document.getElementById("createMrModal");
   card.classList.remove("minimized", "maximized");
@@ -980,12 +1158,13 @@ function toggleMinimizeCreateMr() {
   const isMin = card.classList.toggle("minimized");
   backdrop.classList.toggle("minimized-backdrop", isMin);
   hideMaterialSuggestPopup();
+  hideAssetSuggestPopup();
 }
 
 function toggleMaximizeCreateMr() {
   const card = document.getElementById("createMrModalCard");
   const backdrop = document.getElementById("createMrModal");
-  card.classList.remove("minimized");
+  card.class.remove("minimized");
   backdrop.classList.remove("minimized-backdrop");
   card.classList.toggle("maximized");
 }
@@ -1056,14 +1235,27 @@ async function submitCreateMr() {
   const noMr = document.getElementById("mrNo").value.trim();
   const picRequest = document.getElementById("mrPic").value.trim();
   const costCenter = document.getElementById("mrCostCenter").value;
-  const equipmentNo = document.getElementById("mrEqNo").value.trim();
-  const equipmentName = document.getElementById("mrEqName").value.trim();
+  const eqNoEl = document.getElementById("mrEqNo");
+  const eqNameEl = document.getElementById("mrEqName");
+  const equipmentNo = eqNoEl.value.trim();
+  const equipmentName = eqNameEl.value.trim();
   const priorities = document.getElementById("mrPriorities").value;
   const event = document.getElementById("mrEvent").value;
   const description = document.getElementById("mrDescription").value.trim();
 
   if (!date || !noMr || !picRequest) {
     return showToast("Date, No Material Request, dan PIC Request wajib diisi.", "error");
+  }
+
+  const validAsset = validateStrictEquipmentPair(equipmentNo, equipmentName);
+  if (!validAsset) {
+    eqNoEl.classList.add("invalid-match");
+    eqNameEl.classList.add("invalid-match");
+    return showToast(
+      `Equipment "${equipmentNo} - ${equipmentName}" tidak terdaftar di database Fixed Asset.`,
+      "error",
+      "Validasi Fixed Asset"
+    );
   }
 
   const lineTrs = Array.from(document.querySelectorAll("#mrLinesBody tr"));
@@ -1121,8 +1313,8 @@ async function submitCreateMr() {
       mr: {
         date,
         description,
-        equipmentNo,
-        equipmentName,
+        equipmentNo: validAsset.equipmentNo,
+        equipmentName: validAsset.equipmentName,
         picRequest,
         costCenter,
         noMr,
@@ -1136,6 +1328,7 @@ async function submitCreateMr() {
     allRecords = res.records || [];
     if (res.dropdowns) dropdownLists = res.dropdowns;
     if (Array.isArray(res.materials)) materialCatalog = res.materials;
+    if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
     selectedNoMr = noMr;
     isInlineEditingDoc = false;
     applyFilters();
