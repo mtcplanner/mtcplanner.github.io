@@ -2,7 +2,7 @@
    MTC PLANNER - SAP/MAXIMO SPLIT WORKBENCH (LIGHT THEME)
    ============================================================ */
 :root {
-  --font-main: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --bg-body: #f1f5f9;
   --bg-card: #ffffff;
   --primary: #0284c7;
@@ -600,6 +600,91 @@ td.td-awal { background: #f0fdf4 !important; }
   text-align: center;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+/* === SAVE LOADING POPUP === */
+.swal2-popup.save-loading-popup {
+  width: min(340px, calc(100vw - 32px));
+  padding: 24px 24px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 20px 55px rgba(15, 23, 42, 0.18);
+  font-family: var(--font-main);
+}
+
+.save-loading-popup .swal2-title {
+  margin: 15px 0 5px;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.save-loading-popup .swal2-html-container {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.save-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.save-loading-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid #e0f2fe;
+  border-top-color: #0284c7;
+  border-radius: 50%;
+  animation: save-loading-spin 0.8s linear infinite;
+}
+
+.save-loading-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.save-loading-caption {
+  line-height: 1.5;
+}
+
+.save-loading-progress {
+  position: relative;
+  width: 180px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e2e8f0;
+}
+
+.save-loading-progress::after {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #0284c7);
+  content: "";
+  animation: save-loading-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes save-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes save-loading-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(260%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-loading-spinner,
+  .save-loading-progress::after {
+    animation-duration: 2.5s;
+  }
 }
 
 /* === MODALS === */

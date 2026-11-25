@@ -553,19 +553,7 @@ async function submitCreateDocument() {
   if (items.length === 0) return showToast("Isi minimal 1 item barang.", "error");
 
   closeCreateDocModal();
-  Swal.fire({
-    title: "Menyimpan Surat Jalan",
-    html: '<div>Dokumen sedang diproses dan disimpan.</div><span class="save-loading-progress" aria-hidden="true"></span>',
-    customClass: {
-      popup: "save-loading-popup",
-      title: "save-loading-title",
-      htmlContainer: "save-loading-content"
-    },
-    showConfirmButton: false,
-    allowOutsideClick: false,
-    allowEscapeKey: false,
-    didOpen: () => Swal.showLoading()
-  });
+  Swal.fire({ title: "Menyimpan Surat Jalan...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
   try {
     const res = await callGasApi({

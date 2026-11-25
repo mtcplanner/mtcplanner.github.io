@@ -576,7 +576,22 @@ async function saveAllChanges() {
   const updates = Array.from(pendingUpdates.values());
   if (!updates.length && !pendingNewRows.length) return showToast("Tidak ada perubahan untuk disimpan.", "info");
 
-  Swal.fire({ title: "Menyimpan ke Google Sheet...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  Swal.fire({
+    title: "Menyimpan perubahan",
+    html: `
+      <div class="save-loading-content" role="status" aria-live="polite">
+        <span class="save-loading-spinner" aria-hidden="true"></span>
+        <div class="save-loading-details">
+          <span class="save-loading-caption">Sinkronisasi data ke Google Sheet</span>
+          <span class="save-loading-progress" aria-hidden="true"></span>
+        </div>
+      </div>
+    `,
+    customClass: { popup: "save-loading-popup" },
+    showConfirmButton: false,
+    allowOutsideClick: false,
+    allowEscapeKey: false
+  });
   try {
     const res = await callGasApi({ action: "saveBulk", updates, newRows: pendingNewRows });
     Swal.close();
