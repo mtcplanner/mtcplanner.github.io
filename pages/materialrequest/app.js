@@ -3,6 +3,8 @@
 // ============================================================
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbzXTiknzZQk5KULVx7SQui7ur2QYgIy81pTvmTGtXH_I-pTKb2Vf6TzdrNaYeUElExF/exec";
 const STORAGE_KEY_API = "MTC_MATERIAL_REQUEST_GAS_URL";
+const STORAGE_KEY_SNAPSHOT = "MTC_MR_DATA_SNAPSHOT_V1";
+const INITIAL_RENDER_ROW_LIMIT = 250; // Batasi DOM awal agar rendering instan
 
 let entryColumns = [];
 let allRecords = [];
@@ -15,6 +17,8 @@ let currentView = "all"; // "all" | "detail"
 let isInlineEditingDoc = false;
 let activeSuggestContext = null; // { inputEl, onSelect }
 let activeAssetSuggestContext = null; // { inputEl, onSelect }
+let showAllRowsOverride = false;
+let filterDebounceTimer = null;
 
 function getGasUrl() {
   const saved = (localStorage.getItem(STORAGE_KEY_API) || "").trim();
@@ -54,7 +58,7 @@ function showToast(message, type = "success", title = "") {
   setTimeout(() => {
     toast.classList.remove("show");
     setTimeout(() => toast.remove(), 350);
-  }, 3600);
+  }, 3400);
 }
 
 function showDocumentSaveLoading(title) {
@@ -113,9 +117,72 @@ async function callGasApi(payload) {
   return data;
 }
 
+// Pre-compute search index agar filter/pencarian berjalan dalam < 5ms
+function prepareRecordsSearchIndex(records) {
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    r._stLow = String(r.status || "").toLowerCase();
+    r._prLow = String(r.priorities || "").toLowerCase();
+    r._ccLow = String(r.costCenter || "").toLowerCase();
+    r._hay = `${r.noMr || ""} ${r.materialNo || ""} ${r.itemName || ""} ${r.itemSize || ""} ${r.equipmentNo || ""} ${r.equipmentName || ""} ${r.picRequest || ""} ${r.description || ""} ${r.noPr || ""} ${r.materialCondition || ""} ${r.status || ""}`.toLowerCase();
+  }
+  return records;
+}
+
+function saveLocalSnapshot() {
+  try {
+    const cleanRecords = allRecords.map(({ _stLow, _prLow, _ccLow, _hay, ...rest }) => rest);
+    const snap = {
+      ts: Date.now(),
+      columns: entryColumns,
+      records: cleanRecords,
+      dropdowns: dropdownLists,
+      materials: materialCatalog,
+      assets: fixedAssetCatalog
+    };
+    localStorage.setItem(STORAGE_KEY_SNAPSHOT, JSON.stringify(snap));
+  } catch (_) {}
+}
+
+function restoreLocalSnapshot() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SNAPSHOT);
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    if (!snap || !Array.isArray(snap.records)) return false;
+
+    entryColumns = Array.isArray(snap.columns) ? snap.columns : [];
+    allRecords = prepareRecordsSearchIndex(snap.records);
+    dropdownLists = snap.dropdowns || {};
+    materialCatalog = Array.isArray(snap.materials) ? snap.materials : [];
+    fixedAssetCatalog = Array.isArray(snap.assets) ? snap.assets : [];
+
+    populateAllDropdowns();
+    applyFilters(true);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   applyDeveloperAccess();
-  loadData(false);
+
+  // 1. Render instan dari cache lokal jika tersedia, lalu sinkron di background
+  const hasCached = restoreLocalSnapshot();
+  loadData(false, hasCached);
+
+  // 2. Pasang debounce 200ms pada input search agar ketikan tidak lagging
+  const searchInp = document.getElementById("filterSearch");
+  if (searchInp) {
+    searchInp.oninput = () => {
+      clearTimeout(filterDebounceTimer);
+      filterDebounceTimer = setTimeout(() => {
+        showAllRowsOverride = false;
+        applyFilters(true);
+      }, 200);
+    };
+  }
 
   document.addEventListener("click", (e) => {
     const popup = document.getElementById("materialSuggestPopup");
@@ -134,27 +201,37 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-async function loadData(forceRefresh = false) {
+async function loadData(forceRefresh = false, silentBackground = false) {
   try {
-    document.getElementById("entryTableBody").innerHTML =
-      `<tr><td colspan="21" class="empty-box">Memuat data Material Request, Dropdown, Katalog Material Code &amp; Fixed Asset...</td></tr>`;
+    if (!silentBackground) {
+      document.getElementById("entryTableBody").innerHTML =
+        `<tr><td colspan="21" class="empty-box">Memuat data Material Request, Dropdown, Katalog Material Code &amp; Fixed Asset...</td></tr>`;
+    } else {
+      document.getElementById("mrSummaryMeta").textContent = `• Menyinkronkan data terbaru...`;
+    }
 
     const res = await callGasApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
     entryColumns = Array.isArray(res.columns) ? res.columns : [];
-    allRecords = Array.isArray(res.records) ? res.records : [];
-    dropdownLists = res.dropdowns || {};
-    materialCatalog = Array.isArray(res.materials) ? res.materials : [];
-    fixedAssetCatalog = Array.isArray(res.assets) ? res.assets : [];
+    allRecords = prepareRecordsSearchIndex(Array.isArray(res.records) ? res.records : []);
+    if (res.dropdowns) dropdownLists = res.dropdowns;
+    if (Array.isArray(res.materials)) materialCatalog = res.materials;
+    if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
 
+    saveLocalSnapshot();
     populateAllDropdowns();
-    applyFilters();
-    showToast(
-      `Data dimuat (${materialCatalog.length} Material Code • ${fixedAssetCatalog.length} Fixed Asset aktif).`,
-      "success"
-    );
+    applyFilters(true);
+
+    if (!silentBackground || forceRefresh) {
+      showToast(
+        `Data diperbarui (${materialCatalog.length} Material Code • ${fixedAssetCatalog.length} Fixed Asset).`,
+        "success"
+      );
+    }
   } catch (err) {
-    document.getElementById("entryTableBody").innerHTML =
-      `<tr><td colspan="21" class="empty-box" style="color:#dc2626;">${escapeHtml(err.message)}</td></tr>`;
+    if (!silentBackground) {
+      document.getElementById("entryTableBody").innerHTML =
+        `<tr><td colspan="21" class="empty-box" style="color:#dc2626;">${escapeHtml(err.message)}</td></tr>`;
+    }
     showToast(err.message, "error", "Koneksi Gagal");
   }
 }
@@ -187,7 +264,6 @@ function fillSelectOptions(selectId, options, includeAllLabel = null) {
 
 function populateAllDropdowns() {
   const costCenters = getDropdownOptions("costCenter", ["Maintenance", "Welder"]);
-  const conditions = getDropdownOptions("materialCondition", ["On Stock", "Need Order", "Ex-Used"]);
   const statuses = getDropdownOptions("status", ["Open", "Pending", "Done", "Close"]);
   if (!statuses.some(s => s.toLowerCase() === "open")) statuses.unshift("Open");
   const events = getDropdownOptions("event", ["Repair", "Service", "Overhaul", "Predictive", "Backlog", "Idle Asset"]);
@@ -224,14 +300,20 @@ function syncRowConditionNoPr(condSelectEl, noPrInputEl) {
 function searchFixedAssetCatalog(query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return fixedAssetCatalog.slice(0, 35);
-  return fixedAssetCatalog
-    .filter(a =>
+  const out = [];
+  for (let i = 0; i < fixedAssetCatalog.length; i++) {
+    const a = fixedAssetCatalog[i];
+    if (
       String(a.equipmentNo || "").toLowerCase().includes(q) ||
       String(a.equipmentName || "").toLowerCase().includes(q) ||
       String(a.type || "").toLowerCase().includes(q) ||
       String(a.serialNo || "").toLowerCase().includes(q)
-    )
-    .slice(0, 40);
+    ) {
+      out.push(a);
+      if (out.length >= 40) break;
+    }
+  }
+  return out;
 }
 
 function getOrCreateAssetPopup() {
@@ -308,7 +390,9 @@ function validateStrictEquipmentPair(eqNoVal, eqNameVal) {
 }
 
 function bindEquipmentPairInputs(eqNoEl, eqNameEl) {
-  if (!eqNoEl || !eqNameEl) return;
+  if (!eqNoEl || !eqNameEl || eqNoEl.dataset.assetBound === "1") return;
+  eqNoEl.dataset.assetBound = "1";
+  eqNameEl.dataset.assetBound = "1";
 
   const applyAsset = (asset) => {
     eqNoEl.value = String(asset.equipmentNo || "").trim();
@@ -354,14 +438,20 @@ function bindEquipmentPairInputs(eqNoEl, eqNameEl) {
 function searchMaterialCatalog(query) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return materialCatalog.slice(0, 35);
-  return materialCatalog
-    .filter(m =>
+  const out = [];
+  for (let i = 0; i < materialCatalog.length; i++) {
+    const m = materialCatalog[i];
+    if (
       String(m.code || "").toLowerCase().includes(q) ||
       String(m.itemName || "").toLowerCase().includes(q) ||
       String(m.itemSize || "").toLowerCase().includes(q) ||
       String(m.partNo || "").toLowerCase().includes(q)
-    )
-    .slice(0, 40);
+    ) {
+      out.push(m);
+      if (out.length >= 40) break;
+    }
+  }
+  return out;
 }
 
 function showMaterialSuggestPopup(inputEl, onSelectCallback) {
@@ -475,42 +565,54 @@ function bindCatalogPairToContainer(containerEl, selectors, isCreateModal = true
 // ============================================================
 // FILTER, KPI, DAFTAR DOKUMEN MR & RENDER TABEL MERGED HEADER
 // ============================================================
-function applyFilters() {
-  const stVal = document.getElementById("filterStatus").value;
-  const prVal = document.getElementById("filterPriority").value;
-  const ccVal = document.getElementById("filterCostCenter").value;
+function applyFilters(fromDebounce = false) {
+  // Jika dipanggil langsung dari onchange select, reset limit tampilan awal
+  if (!fromDebounce) showAllRowsOverride = false;
+
+  const stVal = document.getElementById("filterStatus").value.toLowerCase();
+  const prVal = document.getElementById("filterPriority").value.toLowerCase();
+  const ccVal = document.getElementById("filterCostCenter").value.toLowerCase();
   const q = document.getElementById("filterSearch").value.trim().toLowerCase();
 
-  filteredRecords = allRecords.filter(r => {
-    if (stVal !== "ALL" && String(r.status || "").toLowerCase() !== stVal.toLowerCase()) return false;
-    if (prVal !== "ALL" && String(r.priorities || "").toLowerCase() !== prVal.toLowerCase()) return false;
-    if (ccVal !== "ALL" && String(r.costCenter || "").toLowerCase() !== ccVal.toLowerCase()) return false;
-    if (q) {
-      const hay = `${r.noMr} ${r.materialNo} ${r.itemName} ${r.itemSize} ${r.equipmentNo} ${r.equipmentName} ${r.picRequest} ${r.description} ${r.noPr} ${r.materialCondition} ${r.status}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+  const out = [];
+  for (let i = 0; i < allRecords.length; i++) {
+    const r = allRecords[i];
+    if (stVal !== "all" && (r._stLow || String(r.status || "").toLowerCase()) !== stVal) continue;
+    if (prVal !== "all" && (r._prLow || String(r.priorities || "").toLowerCase()) !== prVal) continue;
+    if (ccVal !== "all" && (r._ccLow || String(r.costCenter || "").toLowerCase()) !== ccVal) continue;
+    if (q && !(r._hay || "").includes(q)) continue;
+    out.push(r);
+  }
+  filteredRecords = out;
 
   updateKpis();
   renderMrList();
-  renderEntryTableMerged();
-  renderMrDetail();
+
+  // Hanya render view yang sedang aktif agar tidak membuang waktu CPU
+  if (currentView === "all") {
+    renderEntryTableMerged();
+  } else {
+    renderMrDetail();
+  }
 }
 
 function updateKpis() {
-  const uniqueMrs = new Set(filteredRecords.map(r => String(r.noMr || "").trim()).filter(Boolean));
+  const uniqueMrs = new Set();
   let pending = 0;
   let done = 0;
   let urgent = 0;
 
-  filteredRecords.forEach(r => {
-    const st = String(r.status || "").toLowerCase();
-    const pr = String(r.priorities || "").toLowerCase();
+  for (let i = 0; i < filteredRecords.length; i++) {
+    const r = filteredRecords[i];
+    const noMr = String(r.noMr || "").trim();
+    if (noMr) uniqueMrs.add(noMr);
+
+    const st = r._stLow || String(r.status || "").toLowerCase();
+    const pr = r._prLow || String(r.priorities || "").toLowerCase();
     if (st.includes("pending") || st.includes("open")) pending++;
     if (st.includes("done") || st.includes("close")) done++;
     if (pr.includes("urgent") || pr.includes("p3")) urgent++;
-  });
+  }
 
   document.getElementById("kpiTotalMr").textContent = uniqueMrs.size;
   document.getElementById("kpiPending").textContent = pending;
@@ -523,19 +625,22 @@ function renderMrList() {
   const container = document.getElementById("mrListContainer");
   const groups = new Map();
 
-  filteredRecords.forEach(r => {
+  for (let i = 0; i < filteredRecords.length; i++) {
+    const r = filteredRecords[i];
     const key = String(r.noMr || "").trim() || "(Tanpa No MR)";
-    if (!groups.has(key)) {
-      groups.set(key, {
+    let g = groups.get(key);
+    if (!g) {
+      g = {
         noMr: key,
         date: r.date || "-",
         equipment: [r.equipmentNo, r.equipmentName].filter(Boolean).join(" - ") || r.description || "-",
         pic: r.picRequest || "-",
         itemCount: 0
-      });
+      };
+      groups.set(key, g);
     }
-    groups.get(key).itemCount++;
-  });
+    g.itemCount++;
+  }
 
   const arr = Array.from(groups.values());
   document.getElementById("mrListCount").textContent = arr.length;
@@ -545,9 +650,11 @@ function renderMrList() {
     return;
   }
 
-  container.innerHTML = arr.map(g => {
+  const parts = new Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    const g = arr[i];
     const isActive = selectedNoMr === g.noMr;
-    return `
+    parts[i] = `
       <div class="mr-card-item ${isActive ? "active" : ""}" onclick="selectMrDocument('${escapeJsStr(g.noMr)}')">
         <div class="mr-card-top">
           <span class="mr-no">${escapeHtml(g.noMr)}</span>
@@ -557,7 +664,8 @@ function renderMrList() {
         <div class="mr-sub">${escapeHtml(g.date)} • ${escapeHtml(g.pic)}</div>
       </div>
     `;
-  }).join("");
+  }
+  container.innerHTML = parts.join("");
 }
 
 function selectMrDocument(noMr) {
@@ -565,7 +673,6 @@ function selectMrDocument(noMr) {
   selectedNoMr = noMr;
   document.getElementById("activeMrInfo").textContent = `Dokumen MR: ${noMr}`;
   renderMrList();
-  renderMrDetail();
   switchView("detail");
 }
 
@@ -574,6 +681,9 @@ function switchView(mode) {
   if (mode === "all") {
     isInlineEditingDoc = false;
     document.getElementById("activeMrInfo").textContent = "Semua Dokumen MR";
+    renderEntryTableMerged();
+  } else {
+    renderMrDetail();
   }
   document.getElementById("tabBtnAll").classList.toggle("active", mode === "all");
   document.getElementById("tabBtnDetail").classList.toggle("active", mode === "detail");
@@ -604,6 +714,11 @@ function formatWrapCell(value, maxLen = 69, extraAttrs = "", extraClasses = "") 
   return `<td${clsAttr}${extraAttrs}>${escapeHtml(str)}</td>`;
 }
 
+function expandAllTableRows() {
+  showAllRowsOverride = true;
+  renderEntryTableMerged();
+}
+
 function renderEntryTableMerged() {
   const tbody = document.getElementById("entryTableBody");
   if (filteredRecords.length === 0) {
@@ -611,8 +726,15 @@ function renderEntryTableMerged() {
     return;
   }
 
+  // Tampilkan data terbaru lebih dulu / batasi DOM awal agar rendering instan
+  const isTruncated = !showAllRowsOverride && filteredRecords.length > INITIAL_RENDER_ROW_LIMIT;
+  const recordsToRender = isTruncated
+    ? filteredRecords.slice(filteredRecords.length - INITIAL_RENDER_ROW_LIMIT)
+    : filteredRecords;
+
   const blocks = [];
-  filteredRecords.forEach(r => {
+  for (let i = 0; i < recordsToRender.length; i++) {
+    const r = recordsToRender[i];
     const mrKey = String(r.noMr || "").trim() || `__ROW_${r.rowIndex}`;
     const lastBlock = blocks[blocks.length - 1];
     if (lastBlock && lastBlock.mrKey === mrKey) {
@@ -620,17 +742,32 @@ function renderEntryTableMerged() {
     } else {
       blocks.push({ mrKey, rows: [r] });
     }
-  });
+  }
 
-  let seqNo = 0;
+  let seqNo = isTruncated ? (filteredRecords.length - recordsToRender.length) : 0;
   const htmlRows = [];
 
-  blocks.forEach(blk => {
+  if (isTruncated) {
+    htmlRows.push(`
+      <tr>
+        <td colspan="21" style="background:#f0f9ff; text-align:center; padding:8px; font-weight:700; color:#0369a1;">
+          Menampilkan ${recordsToRender.length} baris terakhir dari ${filteredRecords.length} total baris agar halaman ringan.
+          <button type="button" class="btn btn-primary btn-sm" style="margin-left:8px;" onclick="expandAllTableRows()">
+            Tampilkan Semua (${filteredRecords.length} Baris)
+          </button>
+        </td>
+      </tr>
+    `);
+  }
+
+  for (let b = 0; b < blocks.length; b++) {
+    const blk = blocks[b];
     const span = blk.rows.length;
     const head = blk.rows[0];
     const docTarget = String(head.noMr || "").trim();
 
-    blk.rows.forEach((r, idxInBlock) => {
+    for (let idxInBlock = 0; idxInBlock < span; idxInBlock++) {
+      const r = blk.rows[idxInBlock];
       seqNo++;
       const isFirst = idxInBlock === 0;
       const rsAttr = span > 1 ? ` rowspan="${span}"` : "";
@@ -665,8 +802,8 @@ function renderEntryTableMerged() {
           ${formatWrapCell(r.remarks || "", 69, "", "")}
         </tr>
       `);
-    });
-  });
+    }
+  }
 
   tbody.innerHTML = htmlRows.join("");
 }
@@ -674,6 +811,40 @@ function renderEntryTableMerged() {
 function onEntryRowJump(noMr) {
   if (!noMr) return;
   selectMrDocument(noMr);
+}
+
+function toDateInputValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  let year;
+  let month;
+  let day;
+  let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
+  if (match) {
+    year = Number(match[1]);
+    month = Number(match[2]);
+    day = Number(match[3]);
+  } else {
+    match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:$|\s)/);
+    if (match) {
+      day = Number(match[1]);
+      month = Number(match[2]);
+      year = Number(match[3]);
+    } else {
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return "";
+      year = parsed.getFullYear();
+      month = parsed.getMonth() + 1;
+      day = parsed.getDate();
+    }
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() + 1 !== month || parsed.getUTCDate() !== day) {
+    return "";
+  }
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 // ============================================================
@@ -790,6 +961,11 @@ function renderMrDetail() {
   const events = getDropdownOptions("event", ["Repair", "Service", "Overhaul", "Predictive", "Backlog", "Idle Asset"]);
   const conditions = getDropdownOptions("materialCondition", ["On Stock", "Need Order", "Ex-Used"]);
   const statuses = getDropdownOptions("status", ["Open", "Pending", "Done", "Close"]);
+  ["Open", "Pending", "Close"].forEach(status => {
+    if (!statuses.some(option => String(option) === status)) {
+      statuses.push(status);
+    }
+  });
 
   container.innerHTML = `
     <div class="doc-summary-box">
@@ -808,7 +984,7 @@ function renderMrDetail() {
     <div class="doc-meta-grid" id="inlineHeaderForm">
       <div class="meta-item">
         <span>Date</span>
-        <input type="date" id="inlDate" class="inline-input" value="${escapeHtml(head.date || "")}" />
+        <input type="date" id="inlDate" class="inline-input" value="${escapeHtml(toDateInputValue(head.date))}" />
       </div>
       <div class="meta-item">
         <span>No Material Request</span>
@@ -883,9 +1059,8 @@ function renderMrDetail() {
     inlEqName.classList.add("valid-match");
   }
 
-  const conditionsList = conditions;
   document.querySelectorAll("#inlineItemsBody tr").forEach(tr => {
-    bindInlineRowEvents(tr, conditionsList);
+    bindInlineRowEvents(tr);
   });
 }
 
@@ -893,7 +1068,12 @@ function renderInlineItemRowHtml(itemObj, seq, isNewRow, conditions, statuses) {
   const onStock = isOnStockCondition(itemObj.materialCondition);
   const rowTypeAttr = isNewRow ? `data-is-new="1"` : `data-is-new="0" data-row-index="${itemObj.rowIndex}"`;
   const condHtml = buildSelectHtml(conditions, itemObj.materialCondition || "On Stock", "inline-select inl-cond");
-  const statusHtml = buildSelectHtml(statuses, itemObj.status || "Open", "inline-select inl-status");
+  const statusHtml = buildSelectHtml(
+    statuses,
+    itemObj.status || "Open",
+    "inline-select inl-status",
+    'disabled aria-label="Status otomatis berdasarkan Qty Received"'
+  );
 
   return `
     <tr ${rowTypeAttr}>
@@ -905,7 +1085,7 @@ function renderInlineItemRowHtml(itemObj, seq, isNewRow, conditions, statuses) {
       <td><input type="text" class="inline-input text-center inl-unit" value="${escapeHtml(itemObj.unit || "")}" readonly /></td>
       <td>${condHtml}</td>
       <td><input type="text" class="inline-input text-center inl-nopr" value="${onStock ? "" : escapeHtml(itemObj.noPr || "")}" ${onStock ? 'disabled placeholder="Tidak perlu PR"' : 'placeholder="No PR..."'} /></td>
-      <td><input type="number" class="inline-input text-center inl-qtyrec" value="${itemObj.qtyReceived ?? 0}" min="0" step="any" /></td>
+      <td><input type="number" class="inline-input text-center inl-qtyrec" value="${itemObj.qtyReceived ?? 0}" min="0" max="${Number(itemObj.qty) || 0}" step="any" /></td>
       <td><input type="number" class="inline-input text-center fw-bold inl-rem" value="${itemObj.remainingQty ?? Math.max((Number(itemObj.qty) || 0) - (Number(itemObj.qtyReceived) || 0), 0)}" readonly /></td>
       <td>${statusHtml}</td>
       <td><input type="text" class="inline-input inl-remarks" value="${escapeHtml(itemObj.remarks || "")}" placeholder="Remarks..." /></td>
@@ -916,7 +1096,7 @@ function renderInlineItemRowHtml(itemObj, seq, isNewRow, conditions, statuses) {
   `;
 }
 
-function bindInlineRowEvents(tr, conditionsList) {
+function bindInlineRowEvents(tr) {
   bindCatalogPairToContainer(tr, {
     code: ".inl-code",
     name: ".inl-name",
@@ -937,9 +1117,33 @@ function bindInlineRowEvents(tr, conditionsList) {
     const q = Number(qtyInp ? qtyInp.value : 0) || 0;
     const r = Number(recInp ? recInp.value : 0) || 0;
     if (remInp) remInp.value = Math.max(q - r, 0);
+    syncInlineReceivedStatus(tr);
   };
   if (qtyInp) qtyInp.addEventListener("input", recalc);
   if (recInp) recInp.addEventListener("input", recalc);
+  recalc();
+}
+
+function getReceivedStatus(qty, qtyReceived) {
+  if (qtyReceived === 0) return "Open";
+  if (qtyReceived === qty) return "Close";
+  return "Pending";
+}
+
+function syncInlineReceivedStatus(tr) {
+  const qtyInput = tr.querySelector(".inl-qty");
+  const qtyReceivedInput = tr.querySelector(".inl-qtyrec");
+  const statusSelect = tr.querySelector(".inl-status");
+  if (!qtyInput || !qtyReceivedInput || !statusSelect) return;
+
+  const qty = qtyInput.value.trim() === "" ? 0 : Number(qtyInput.value);
+  const qtyReceived = qtyReceivedInput.value.trim() === "" ? 0 : Number(qtyReceivedInput.value);
+  const isValid = Number.isFinite(qty) && qty >= 0
+    && Number.isFinite(qtyReceived) && qtyReceived >= 0 && qtyReceived <= qty;
+
+  qtyReceivedInput.max = String(Number.isFinite(qty) && qty >= 0 ? qty : 0);
+  qtyReceivedInput.classList.toggle("invalid-match", !isValid);
+  if (isValid) statusSelect.value = getReceivedStatus(qty, qtyReceived);
 }
 
 let pendingDeletedRowIndices = [];
@@ -968,7 +1172,7 @@ function addInlineItemRow() {
 
   const newTr = tempDiv.firstElementChild;
   tbody.appendChild(newTr);
-  bindInlineRowEvents(newTr, conditions);
+  bindInlineRowEvents(newTr);
 }
 
 function removeInlineItemRow(btn) {
@@ -1025,14 +1229,28 @@ async function saveInlineDocumentEdits() {
     const codeInp = tr.querySelector(".inl-code");
     const nameInp = tr.querySelector(".inl-name");
     const sizeInp = tr.querySelector(".inl-size");
-    const qtyVal = Number(tr.querySelector(".inl-qty").value) || 0;
+    const qtyInput = tr.querySelector(".inl-qty");
+    const qtyReceivedInput = tr.querySelector(".inl-qtyrec");
+    const qtyVal = qtyInput.value.trim() === "" ? 0 : Number(qtyInput.value);
     const unitVal = tr.querySelector(".inl-unit").value.trim();
     const condVal = tr.querySelector(".inl-cond").value;
     const noPrVal = isOnStockCondition(condVal) ? "" : tr.querySelector(".inl-nopr").value.trim();
-    const qtyRecVal = Number(tr.querySelector(".inl-qtyrec").value) || 0;
-    const statusVal = tr.querySelector(".inl-status").value;
+    const qtyRecVal = qtyReceivedInput.value.trim() === "" ? 0 : Number(qtyReceivedInput.value);
     const remarksVal = tr.querySelector(".inl-remarks").value.trim();
 
+    if (!Number.isFinite(qtyVal) || qtyVal < 0
+      || !Number.isFinite(qtyRecVal) || qtyRecVal < 0 || qtyRecVal > qtyVal) {
+      qtyReceivedInput.classList.add("invalid-match");
+      qtyReceivedInput.focus();
+      return showToast(
+        `Item #${i + 1}: Qty Received harus antara 0 dan Qty Order (${Number.isFinite(qtyVal) ? qtyVal : 0}).`,
+        "error",
+        "Validasi Qty"
+      );
+    }
+
+    qtyReceivedInput.classList.remove("invalid-match");
+    const statusVal = getReceivedStatus(qtyVal, qtyRecVal);
     const rawCode = codeInp.value.trim();
     const rawName = nameInp.value.trim();
 
@@ -1099,13 +1317,11 @@ async function saveInlineDocumentEdits() {
       }
     });
     Swal.close();
-    allRecords = res.records || [];
-    if (res.dropdowns) dropdownLists = res.dropdowns;
-    if (Array.isArray(res.materials)) materialCatalog = res.materials;
-    if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
+    allRecords = prepareRecordsSearchIndex(res.records || []);
+    saveLocalSnapshot();
     selectedNoMr = noMr;
     isInlineEditingDoc = false;
-    applyFilters();
+    applyFilters(true);
     showToast(`Perubahan dokumen ${noMr} berhasil disimpan.`, "success");
   } catch (err) {
     pendingDeletedRowIndices = deletedIndices;
@@ -1164,7 +1380,7 @@ function toggleMinimizeCreateMr() {
 function toggleMaximizeCreateMr() {
   const card = document.getElementById("createMrModalCard");
   const backdrop = document.getElementById("createMrModal");
-  card.class.remove("minimized");
+  card.classList.remove("minimized");
   backdrop.classList.remove("minimized-backdrop");
   card.classList.toggle("maximized");
 }
@@ -1325,13 +1541,11 @@ async function submitCreateMr() {
       }
     });
     Swal.close();
-    allRecords = res.records || [];
-    if (res.dropdowns) dropdownLists = res.dropdowns;
-    if (Array.isArray(res.materials)) materialCatalog = res.materials;
-    if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
+    allRecords = prepareRecordsSearchIndex(res.records || []);
+    saveLocalSnapshot();
     selectedNoMr = noMr;
     isInlineEditingDoc = false;
-    applyFilters();
+    applyFilters(true);
     showToast(`Material Request ${noMr} (${items.length} item) berhasil disimpan dengan status Open.`, "success");
   } catch (err) {
     Swal.fire({ icon: "error", title: "Gagal Simpan", text: err.message });
@@ -1352,10 +1566,11 @@ function confirmDeleteMr(noMr) {
     try {
       const res = await callGasApi({ action: "deleteMR", noMr });
       Swal.close();
-      allRecords = res.records || [];
+      allRecords = prepareRecordsSearchIndex(res.records || []);
+      saveLocalSnapshot();
       selectedNoMr = null;
       isInlineEditingDoc = false;
-      applyFilters();
+      applyFilters(true);
       switchView("all");
       showToast(`Dokumen ${noMr} telah dihapus.`, "success");
     } catch (err) {
