@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Material Request (SAP / Maximo)</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- HEADER COMPACT -->
+  <header class="mr-header">
+    <div class="mr-brand">
+      <span class="mr-pill">SAP ME51N / MAXIMO MR</span>
+      <h1>Material Request</h1>
+      <span class="mr-meta" id="mrSummaryMeta">• Terintegrasi Katalog Material Code</span>
+    </div>
+    <div class="mr-actions">
+      <button type="button" class="btn btn-ghost" id="btnApiConfig" style="display:none;" onclick="openApiConfigModal()">
+        <i class="bi bi-link-45deg"></i> API URL
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="loadData(true)" title="Muat ulang data & katalog Material Code">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="exportToExcel()">
+        <i class="bi bi-file-earmark-excel"></i> Export .xlsx
+      </button>
+      <button type="button" class="btn btn-primary" onclick="openCreateMrModal()">
+        <i class="bi bi-plus-lg"></i> Buat Material Request
+      </button>
+    </div>
+  </header>
+
+  <!-- KPI & FILTER BAR -->
+  <section class="mr-toolbar">
+    <div class="kpi-row">
+      <div class="kpi-chip">
+        <span class="k-lbl">Total Dokumen MR</span>
+        <span class="k-num" id="kpiTotalMr">0</span>
+      </div>
+      <div class="kpi-chip kpi-warn">
+        <span class="k-lbl">Open / Pending</span>
+        <span class="k-num" id="kpiPending">0</span>
+      </div>
+      <div class="kpi-chip kpi-ok">
+        <span class="k-lbl">Done / Close</span>
+        <span class="k-num" id="kpiDone">0</span>
+      </div>
+      <div class="kpi-chip kpi-danger">
+        <span class="k-lbl">P3-Urgent</span>
+        <span class="k-num" id="kpiUrgent">0</span>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <select id="filterStatus" class="ctrl-select" onchange="applyFilters()">
+        <option value="ALL">Semua Status</option>
+      </select>
+      <select id="filterPriority" class="ctrl-select" onchange="applyFilters()">
+        <option value="ALL">Semua Priority</option>
+      </select>
+      <select id="filterCostCenter" class="ctrl-select" onchange="applyFilters()">
+        <option value="ALL">Semua Cost Center</option>
+      </select>
+      <input type="text" id="filterSearch" class="ctrl-input" placeholder="Cari No MR / Material No / Item / Unit / PIC..." oninput="applyFilters()" style="width:240px;" />
+    </div>
+  </section>
+
+  <!-- SPLIT WORKBENCH -->
+  <main class="mr-workbench">
+
+    <!-- PANEL KIRI: DAFTAR DOKUMEN MATERIAL REQUEST -->
+    <aside class="mr-list-panel">
+      <div class="panel-head">
+        <span><i class="bi bi-file-earmark-ruled"></i> Daftar No MR</span>
+        <span class="badge-count" id="mrListCount">0</span>
+      </div>
+      <div class="mr-list-scroll" id="mrListContainer">
+        <div class="empty-box">Memuat daftar MR...</div>
+      </div>
+    </aside>
+
+    <!-- PANEL KANAN: TABEL REKAP ENTRY & RINCIAN DOKUMEN MR -->
+    <section class="mr-detail-panel">
+      <div class="panel-head detail-head">
+        <div class="tab-switch">
+          <button type="button" class="tab-btn active" id="tabBtnAll" onclick="switchView('all')">
+            <i class="bi bi-table"></i> Semua Entry MR
+          </button>
+          <button type="button" class="tab-btn" id="tabBtnDetail" onclick="switchView('detail')">
+            <i class="bi bi-card-checklist"></i> Rincian Dokumen MR
+          </button>
+        </div>
+        <div id="activeMrInfo" class="active-mr-label">Semua Dokumen MR</div>
+      </div>
+
+      <!-- VIEW 1: TABEL ENTRY LENGKAP (MERGED HEADER PER NO MR, TANPA KOLOM AKSI) -->
+      <div class="view-section active" id="viewAll">
+        <div class="table-scroll">
+          <table class="mr-table" id="entryTable">
+            <thead>
+              <tr>
+                <th style="width:45px;">No</th>
+                <th>Date</th>
+                <th>No Material Request</th>
+                <th>Equipment No</th>
+                <th>Equipment Name</th>
+                <th>Description</th>
+                <th>PIC Request</th>
+                <th>Cost Center</th>
+                <th>Priorities</th>
+                <th>Event</th>
+                <th>Material No</th>
+                <th>Item Name</th>
+                <th>Item Size</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Material Condition</th>
+                <th>No PR</th>
+                <th>Qty Received</th>
+                <th>Remaining QTY</th>
+                <th>Status</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="entryTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- VIEW 2: RINCIAN DOKUMEN MR TERPILIH (INLINE EDIT & TAMBAH ITEM) -->
+      <div class="view-section" id="viewDetail">
+        <div class="detail-scroll" id="mrDetailBody">
+          <div class="empty-box">Pilih nomor Material Request di panel kiri atau klik baris data untuk melihat detail item.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL BUAT MATERIAL REQUEST BARU (MINIMIZE / MAXIMIZE, CONDITION & NO PR DI TIAP ITEM) -->
+  <div class="modal-backdrop" id="createMrModal">
+    <div class="modal-card modal-xl" id="createMrModalCard">
+      <div class="modal-header">
+        <h3><i class="bi bi-cart-plus"></i> Buat Material Request Baru (Status Default: Open)</h3>
+        <div class="modal-win-controls">
+          <button type="button" class="modal-win-btn" id="btnToggleMinimizeMr" onclick="toggleMinimizeCreateMr()" title="Minimize / Restore">
+            <i class="bi bi-dash-lg"></i>
+          </button>
+          <button type="button" class="modal-win-btn" id="btnToggleMaximizeMr" onclick="toggleMaximizeCreateMr()" title="Maximize / Restore">
+            <i class="bi bi-arrows-fullscreen"></i>
+          </button>
+          <button type="button" class="modal-close" onclick="closeCreateMrModal()" title="Tutup">&times;</button>
+        </div>
+      </div>
+
+      <div class="modal-body" id="createMrModalBody">
+        <div class="section-caption">1. Informasi Header Dokumen &amp; Equipment</div>
+        <div class="form-grid-4">
+          <div class="form-field">
+            <label>Date *</label>
+            <input type="date" id="mrDate" />
+          </div>
+          <div class="form-field">
+            <label>No Material Request *</label>
+            <input type="text" id="mrNo" placeholder="Contoh: MR/2026/11/001" />
+          </div>
+          <div class="form-field">
+            <label>PIC Request *</label>
+            <input type="text" id="mrPic" placeholder="Nama pemohon..." />
+          </div>
+          <div class="form-field">
+            <label>Cost Center *</label>
+            <select id="mrCostCenter"></select>
+          </div>
+        </div>
+
+        <div class="form-grid-4">
+          <div class="form-field">
+            <label>Equipment No</label>
+            <input type="text" id="mrEqNo" placeholder="Contoh: 082003514" />
+          </div>
+          <div class="form-field">
+            <label>Equipment Name</label>
+            <input type="text" id="mrEqName" placeholder="Contoh: Engine MP 1" />
+          </div>
+          <div class="form-field">
+            <label>Priorities *</label>
+            <select id="mrPriorities"></select>
+          </div>
+          <div class="form-field">
+            <label>Event *</label>
+            <select id="mrEvent"></select>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label>Description (Umum)</label>
+          <input type="text" id="mrDescription" placeholder="Keperluan pekerjaan..." />
+        </div>
+
+        <!-- LINE ITEMS (CONDITION & NO PR MELEKAT PADA TIAP ITEM) -->
+        <div class="line-items-box">
+          <div class="line-items-head">
+            <span>
+              <i class="bi bi-shield-check" style="color:#16a34a;"></i>
+              2. Line Items (Condition &amp; No PR per item • On Stock = No PR terkunci • Ketik nama mis. "Hose" untuk panduan Item Size)
+            </span>
+            <button type="button" class="btn btn-success btn-sm" onclick="addMrLineRow()">
+              <i class="bi bi-plus-lg"></i> Tambah Baris Item
+            </button>
+          </div>
+          <div class="line-items-scroll">
+            <table class="mr-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;">No</th>
+                  <th style="width:125px;">Material No *</th>
+                  <th style="min-width:200px;">Item Name *</th>
+                  <th style="width:135px;">Item Size</th>
+                  <th style="width:70px;">Qty *</th>
+                  <th style="width:68px;">Unit</th>
+                  <th style="width:125px;">Condition *</th>
+                  <th style="width:115px;">No PR</th>
+                  <th style="min-width:130px;">Remarks</th>
+                  <th style="width:45px;">Hapus</th>
+                </tr>
+              </thead>
+              <tbody id="mrLinesBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" id="createMrModalFooter">
+        <button type="button" class="btn btn-ghost" onclick="closeCreateMrModal()">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="submitCreateMr()">
+          <i class="bi bi-check2-circle"></i> Simpan Material Request
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL API CONFIG (KHUSUS LEVEL DEVELOPER) -->
+  <div class="modal-backdrop" id="apiConfigModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-gear"></i> Konfigurasi Endpoint GAS (Developer)</h3>
+        <button type="button" class="modal-close" onclick="closeApiConfigModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label>URL Web App Google Apps Script</label>
+          <input type="url" id="gasApiUrlInput" placeholder="https://script.google.com/macros/s/...../exec" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfigModal()">Tutup</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan &amp; Muat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPOVER AUTOCOMPLETE KATALOG MATERIAL CODE -->
+  <div id="materialSuggestPopup" class="mat-suggest-popup" style="display:none;"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
