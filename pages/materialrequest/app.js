@@ -12,6 +12,7 @@ let filteredRecords = [];
 let dropdownLists = {};
 let materialCatalog = []; // [{ code, partNo, itemName, itemSize, unit }]
 let fixedAssetCatalog = []; // [{ equipmentNo, equipmentName, type, serialNo }]
+let activeApprovers = []; // [{ level, nama, email, label }]
 let selectedNoMr = null;
 let currentView = "all"; // "all" | "detail"
 let isInlineEditingDoc = false;
@@ -117,14 +118,98 @@ async function callGasApi(payload) {
   return data;
 }
 
+// ============================================================
+// FORMAT TANGGAL STANDAR INDONESIA: dd/MM/yyyy
+// ============================================================
+function formatDateDmy(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const dmy = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:$|\s)/);
+  if (dmy) {
+    const dd = String(dmy[1]).padStart(2, "0");
+    const mm = String(dmy[2]).padStart(2, "0");
+    const yyyy = dmy[3];
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const ymd = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:$|[T\s])/);
+  if (ymd) {
+    const yyyy = ymd[1];
+    const mm = String(ymd[2]).padStart(2, "0");
+    const dd = String(ymd[3]).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const dd = String(parsed.getDate()).padStart(2, "0");
+    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+    const yyyy = parsed.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
+  return raw;
+}
+
+function getTodayDmy() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yyyy = now.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function getTodayIsoForInput() {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yyyy = now.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function toDateInputValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  let year;
+  let month;
+  let day;
+  let match = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:$|\s)/);
+  if (match) {
+    day = Number(match[1]);
+    month = Number(match[2]);
+    year = Number(match[3]);
+  } else {
+    match = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:$|[T\s])/);
+    if (match) {
+      year = Number(match[1]);
+      month = Number(match[2]);
+      day = Number(match[3]);
+    } else {
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return "";
+      year = parsed.getFullYear();
+      month = parsed.getMonth() + 1;
+      day = parsed.getDate();
+    }
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() + 1 !== month || parsed.getUTCDate() !== day) {
+    return "";
+  }
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 // Pre-compute search index agar filter/pencarian berjalan dalam < 5ms
 function prepareRecordsSearchIndex(records) {
   for (let i = 0; i < records.length; i++) {
     const r = records[i];
+    r.date = formatDateDmy(r.date || "");
     r._stLow = String(r.status || "").toLowerCase();
     r._prLow = String(r.priorities || "").toLowerCase();
     r._ccLow = String(r.costCenter || "").toLowerCase();
-    r._hay = `${r.noMr || ""} ${r.materialNo || ""} ${r.itemName || ""} ${r.itemSize || ""} ${r.equipmentNo || ""} ${r.equipmentName || ""} ${r.picRequest || ""} ${r.description || ""} ${r.noPr || ""} ${r.materialCondition || ""} ${r.status || ""}`.toLowerCase();
+    r._hay = `${r.date || ""} ${r.noMr || ""} ${r.materialNo || ""} ${r.itemName || ""} ${r.itemSize || ""} ${r.equipmentNo || ""} ${r.equipmentName || ""} ${r.picRequest || ""} ${r.description || ""} ${r.noPr || ""} ${r.materialCondition || ""} ${r.status || ""} ${r.approvedBy || ""}`.toLowerCase();
   }
   return records;
 }
@@ -138,7 +223,8 @@ function saveLocalSnapshot() {
       records: cleanRecords,
       dropdowns: dropdownLists,
       materials: materialCatalog,
-      assets: fixedAssetCatalog
+      assets: fixedAssetCatalog,
+      approvers: activeApprovers
     };
     localStorage.setItem(STORAGE_KEY_SNAPSHOT, JSON.stringify(snap));
   } catch (_) {}
@@ -156,6 +242,7 @@ function restoreLocalSnapshot() {
     dropdownLists = snap.dropdowns || {};
     materialCatalog = Array.isArray(snap.materials) ? snap.materials : [];
     fixedAssetCatalog = Array.isArray(snap.assets) ? snap.assets : [];
+    activeApprovers = Array.isArray(snap.approvers) ? snap.approvers : [];
 
     populateAllDropdowns();
     applyFilters(true);
@@ -216,6 +303,7 @@ async function loadData(forceRefresh = false, silentBackground = false) {
     if (res.dropdowns) dropdownLists = res.dropdowns;
     if (Array.isArray(res.materials)) materialCatalog = res.materials;
     if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
+    if (Array.isArray(res.approvers)) activeApprovers = res.approvers;
 
     saveLocalSnapshot();
     populateAllDropdowns();
@@ -566,7 +654,6 @@ function bindCatalogPairToContainer(containerEl, selectors, isCreateModal = true
 // FILTER, KPI, DAFTAR DOKUMEN MR & RENDER TABEL MERGED HEADER
 // ============================================================
 function applyFilters(fromDebounce = false) {
-  // Jika dipanggil langsung dari onchange select, reset limit tampilan awal
   if (!fromDebounce) showAllRowsOverride = false;
 
   const stVal = document.getElementById("filterStatus").value.toLowerCase();
@@ -588,7 +675,6 @@ function applyFilters(fromDebounce = false) {
   updateKpis();
   renderMrList();
 
-  // Hanya render view yang sedang aktif agar tidak membuang waktu CPU
   if (currentView === "all") {
     renderEntryTableMerged();
   } else {
@@ -632,7 +718,7 @@ function renderMrList() {
     if (!g) {
       g = {
         noMr: key,
-        date: r.date || "-",
+        date: formatDateDmy(r.date) || "-",
         equipment: [r.equipmentNo, r.equipmentName].filter(Boolean).join(" - ") || r.description || "-",
         pic: r.picRequest || "-",
         itemCount: 0
@@ -726,7 +812,6 @@ function renderEntryTableMerged() {
     return;
   }
 
-  // Tampilkan data terbaru lebih dulu / batasi DOM awal agar rendering instan
   const isTruncated = !showAllRowsOverride && filteredRecords.length > INITIAL_RENDER_ROW_LIMIT;
   const recordsToRender = isTruncated
     ? filteredRecords.slice(filteredRecords.length - INITIAL_RENDER_ROW_LIMIT)
@@ -765,6 +850,7 @@ function renderEntryTableMerged() {
     const span = blk.rows.length;
     const head = blk.rows[0];
     const docTarget = String(head.noMr || "").trim();
+    const headDateFormatted = formatDateDmy(head.date) || "-";
 
     for (let idxInBlock = 0; idxInBlock < span; idxInBlock++) {
       const r = blk.rows[idxInBlock];
@@ -774,7 +860,7 @@ function renderEntryTableMerged() {
       const mergedCls = span > 1 ? "merged-header-cell" : "";
 
       const headerCellsHtml = isFirst ? `
-        <td class="text-center ${mergedCls}"${rsAttr}>${escapeHtml(head.date || "-")}</td>
+        <td class="text-center ${mergedCls}"${rsAttr}>${escapeHtml(headDateFormatted)}</td>
         <td class="text-center fw-bold ${mergedCls}"${rsAttr} style="color:var(--primary);">${escapeHtml(head.noMr || "-")}</td>
         <td class="text-center ${mergedCls}"${rsAttr}>${escapeHtml(head.equipmentNo || "")}</td>
         <td class="${mergedCls}"${rsAttr}>${escapeHtml(head.equipmentName || "")}</td>
@@ -813,40 +899,6 @@ function onEntryRowJump(noMr) {
   selectMrDocument(noMr);
 }
 
-function toDateInputValue(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-
-  let year;
-  let month;
-  let day;
-  let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
-  if (match) {
-    year = Number(match[1]);
-    month = Number(match[2]);
-    day = Number(match[3]);
-  } else {
-    match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:$|\s)/);
-    if (match) {
-      day = Number(match[1]);
-      month = Number(match[2]);
-      year = Number(match[3]);
-    } else {
-      const parsed = new Date(raw);
-      if (Number.isNaN(parsed.getTime())) return "";
-      year = parsed.getFullYear();
-      month = parsed.getMonth() + 1;
-      day = parsed.getDate();
-    }
-  }
-
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() + 1 !== month || parsed.getUTCDate() !== day) {
-    return "";
-  }
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
 // ============================================================
 // TAB RINCIAN DOKUMEN MR: MODE BACA & MODE INLINE EDIT + TAMBAH ITEM
 // ============================================================
@@ -883,18 +935,33 @@ function renderMrDetail() {
     return;
   }
 
+  const appInfo = getDocumentApprovalSummary(lines);
+  const checkIconHtml = appInfo.isFullApproved
+    ? `<button type="button" class="approval-check-btn approved" onclick="showApprovalInfoPopup('${escapeJsStr(selectedNoMr)}')" title="Full Approved (${appInfo.approvedActorsCount}/${appInfo.requiredApproversCount} approver) — Klik untuk lihat detail">
+         <i class="bi bi-check-circle-fill"></i>
+       </button>`
+    : `<button type="button" class="approval-check-btn pending" onclick="showApprovalInfoPopup('${escapeJsStr(selectedNoMr)}')" title="Approval ${appInfo.approvedActorsCount}/${appInfo.requiredApproversCount} approver — Klik untuk lihat detail">
+         <i class="bi bi-check-circle-fill"></i>
+       </button>`;
   const head = lines[0];
+  const headDateFormatted = formatDateDmy(head.date) || "-";
 
   if (!isInlineEditingDoc) {
     container.innerHTML = `
       <div class="doc-summary-box">
         <div>
-          <div style="font-size:15px; font-weight:800;">${escapeHtml(selectedNoMr)}</div>
+          <div style="font-size:15px; font-weight:800; display:flex; align-items:center; gap:4px;">
+            <span>${escapeHtml(selectedNoMr)}</span>
+            ${checkIconHtml}
+          </div>
           <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
             ${escapeHtml(head.description || "Material Request Requisition")}
           </div>
         </div>
         <div class="no-print" style="display:flex; gap:6px; align-items:center;">
+          <button type="button" class="btn btn-success btn-sm" onclick="sendApprovalMr('${escapeJsStr(selectedNoMr)}')">
+            <i class="bi bi-send-check"></i> Send Approval
+          </button>
           <button type="button" class="btn btn-ghost btn-sm" onclick="window.print()">
             <i class="bi bi-printer"></i> Cetak MR
           </button>
@@ -908,7 +975,7 @@ function renderMrDetail() {
       </div>
 
       <div class="doc-meta-grid">
-        <div class="meta-item"><span>Date</span><strong>${escapeHtml(head.date || "-")}</strong></div>
+        <div class="meta-item"><span>Date</span><strong>${escapeHtml(headDateFormatted)}</strong></div>
         <div class="meta-item"><span>No Material Request</span><strong>${escapeHtml(head.noMr || "-")}</strong></div>
         <div class="meta-item"><span>Equipment</span><strong>${escapeHtml([head.equipmentNo, head.equipmentName].filter(Boolean).join(" - ") || "-")}</strong></div>
         <div class="meta-item"><span>PIC Request</span><strong>${escapeHtml(head.picRequest || "-")}</strong></div>
@@ -970,7 +1037,7 @@ function renderMrDetail() {
   container.innerHTML = `
     <div class="doc-summary-box">
       <div>
-        <div style="font-size:14px; font-weight:800; color:var(--primary);">Mode Edit Langsung — ${escapeHtml(selectedNoMr)}</div>
+        <div style="font-size:14px; font-weight:800; color:var(--primary);">Mode Edit — ${escapeHtml(selectedNoMr)}</div>
         <div style="font-size:10.5px; color:var(--text-secondary);">Ubah langsung field dokumen/item atau tambah item baru ke MR ini</div>
       </div>
       <div class="no-print" style="display:flex; gap:6px; align-items:center;">
@@ -1193,7 +1260,8 @@ function removeInlineItemRow(btn) {
 }
 
 async function saveInlineDocumentEdits() {
-  const date = document.getElementById("inlDate").value;
+  const rawDate = document.getElementById("inlDate").value;
+  const date = formatDateDmy(rawDate);
   const noMr = document.getElementById("inlNoMr").value.trim();
   const eqNoEl = document.getElementById("inlEqNo");
   const eqNameEl = document.getElementById("inlEqName");
@@ -1338,7 +1406,7 @@ function openCreateMrModal() {
   card.classList.remove("minimized", "maximized");
   backdrop.classList.remove("minimized-backdrop");
 
-  document.getElementById("mrDate").value = new Date().toISOString().split("T")[0];
+  document.getElementById("mrDate").value = getTodayIsoForInput();
   document.getElementById("mrNo").value = "";
   document.getElementById("mrPic").value = "";
 
@@ -1447,7 +1515,8 @@ function removeMrLineRow(btn) {
 }
 
 async function submitCreateMr() {
-  const date = document.getElementById("mrDate").value;
+  const rawDate = document.getElementById("mrDate").value;
+  const date = formatDateDmy(rawDate);
   const noMr = document.getElementById("mrNo").value.trim();
   const picRequest = document.getElementById("mrPic").value.trim();
   const costCenter = document.getElementById("mrCostCenter").value;
@@ -1587,14 +1656,14 @@ function exportToExcel() {
     "Priorities", "Material Condition", "No PR", "Event", "Qty Received", "Remaining QTY", "Status", "Remarks"
   ];
   const rows = filteredRecords.map(r => [
-    r.date, r.description, String(r.materialNo || ""), r.itemName, r.itemSize, r.qty, r.unit,
+    formatDateDmy(r.date), r.description, String(r.materialNo || ""), r.itemName, r.itemSize, r.qty, r.unit,
     r.equipmentNo, r.equipmentName, r.picRequest, r.costCenter, r.noMr,
     r.priorities, r.materialCondition, r.noPr, r.event, r.qtyReceived, r.remainingQty, r.status, r.remarks
   ]);
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   XLSX.utils.book_append_sheet(wb, ws, "Entry");
-  XLSX.writeFile(wb, `Material_Request_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(wb, `Material_Request_${getTodayDmy().replace(/\//g, "-")}.xlsx`);
 }
 
 function openApiConfigModal() {
@@ -1618,4 +1687,131 @@ function escapeHtml(str) {
 }
 function escapeJsStr(str) {
   return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function sendApprovalMr(noMr) {
+  if (!noMr) return;
+  const confirmRes = await Swal.fire({
+    title: "Kirim Email Approval?",
+    text: `Kirim approval untuk Material Request "${noMr}" .`,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonColor: "#16a34a",
+    confirmButtonText: "Ya, Kirim Approval"
+  });
+  if (!confirmRes.isConfirmed) return;
+
+  showDocumentSaveLoading("Mengirim Email Approval...");
+  try {
+    const res = await callGasApi({
+      action: "sendApprovalEmail",
+      noMr: noMr
+    });
+    Swal.close();
+    showToast(res.message || "Email approval berhasil dikirim.", "success");
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "Gagal Kirim Email", text: err.message });
+  }
+}
+
+function parseApprovalEntriesClient(approvedByRaw, approvedAtRaw) {
+  const byParts = String(approvedByRaw || "")
+    .split(/\s*\|\s*|\s*;\s*/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const atParts = String(approvedAtRaw || "")
+    .split(/\s*\|\s*|\s*;\s*/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return byParts.map((actor, idx) => ({
+    actor,
+    at: atParts[idx] || atParts[atParts.length - 1] || "-"
+  }));
+}
+
+function getDocumentApprovalSummary(lines) {
+  const total = lines.length;
+  const requiredApproversCount = Math.max(activeApprovers.length, 1);
+
+  const actorSet = new Set();
+  const detailedEntries = [];
+  let approvedItemCount = 0;
+
+  lines.forEach(ln => {
+    const st = String(ln.approvedStatus || "").trim().toLowerCase();
+    const entries = parseApprovalEntriesClient(ln.approvedBy, ln.approvedAt);
+    if (st.startsWith("approved") || entries.length > 0) {
+      approvedItemCount++;
+    }
+    entries.forEach(e => {
+      if (!actorSet.has(e.actor.toLowerCase())) {
+        actorSet.add(e.actor.toLowerCase());
+        detailedEntries.push(e);
+      }
+    });
+  });
+
+  const approvedActorsCount = detailedEntries.length;
+  const isFullApproved =
+    total > 0 &&
+    approvedItemCount === total &&
+    approvedActorsCount >= requiredApproversCount;
+
+  const pendingApprovers = activeApprovers.filter(ap => {
+    const lbl = String(ap.label || ap.email || ap.nama || "").toLowerCase();
+    const em = String(ap.email || "").toLowerCase();
+    return !detailedEntries.some(e => {
+      const act = e.actor.toLowerCase();
+      return act === lbl || (em && act.includes(em));
+    });
+  });
+
+  return {
+    total,
+    approvedItemCount,
+    approvedActorsCount,
+    requiredApproversCount,
+    isFullApproved,
+    entries: detailedEntries,
+    pendingApprovers
+  };
+}
+
+function showApprovalInfoPopup(noMr) {
+  const lines = allRecords.filter(r => String(r.noMr || "").trim() === String(noMr || "").trim());
+  const info = getDocumentApprovalSummary(lines);
+
+  const entriesHtml = info.entries.length
+    ? info.entries.map((e, i) => `
+        <div class="mr-approval-entry">
+          <span><b>Tahap ${i + 1}:</b> ${escapeHtml(e.actor)}</span>
+          <small>${escapeHtml(e.at)}</small>
+        </div>
+      `).join("")
+    : `<div class="mr-approval-empty">Belum ada email kantor yang menyetujui dokumen ini.</div>`;
+
+  const pendingHtml = info.pendingApprovers.length
+    ? `<div class="mr-approval-pending"><b>Menunggu:</b> ${escapeHtml(info.pendingApprovers.map(p => p.label).join(", "))}</div>`
+    : "";
+
+  Swal.fire({
+    title: info.isFullApproved ? `Full Approval — ${noMr}` : `Status Approval — ${noMr}`,
+    html: `
+      <div class="mr-save-caption" style="margin-bottom:10px;">
+        <span class="mr-save-live-dot" style="background:${info.isFullApproved ? "#16a34a" : "#eab308"};"></span>
+        <span>${info.isFullApproved ? "Full Approved" : "Belum Full Approval"} (${info.approvedActorsCount}/${info.requiredApproversCount} approver • ${info.approvedItemCount}/${info.total} item)</span>
+      </div>
+      <div class="mr-approval-list">${entriesHtml}</div>
+      ${pendingHtml}
+    `,
+    customClass: {
+      popup: "mr-save-popup mr-approval-popup",
+      title: "mr-save-title",
+      htmlContainer: "mr-save-html mr-approval-html",
+      confirmButton: "btn btn-primary mr-approval-btn"
+    },
+    buttonsStyling: false,
+    confirmButtonText: "Tutup"
+  });
 }
