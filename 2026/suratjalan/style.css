@@ -2,7 +2,7 @@
    MTC PLANNER - SURAT JALAN (SAP / MAXIMO LIGHT SUITE)
    ============================================================ */
 :root {
-  --font-main: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --bg-body: #f1f5f9;
   --bg-card: #ffffff;
   --primary: #0284c7;
