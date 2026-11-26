@@ -3,7 +3,12 @@
 // ============================================================
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbyCdP5LMXTjhg4OFguBeIGWh8NkGLovZ9dDL-Q863LSA1wJOpleCY5Ry9eFrbeNHgp59A/exec";
 const STORAGE_KEY_API = "MTC_SURAT_JALAN_GAS_URL";
-const STORAGE_KEY_SNAPSHOT = "MTC_SURAT_JALAN_DATA_SNAPSHOT_V1";
+const STORAGE_KEY_SNAPSHOT = "MTC_SURAT_JALAN_DATA_SNAPSHOT_V2";
+const STORAGE_KEY_LEGACY_SNAPSHOT = "MTC_SURAT_JALAN_DATA_SNAPSHOT_V1";
+const STORAGE_KEY_MATERIALS = "MTC_SURAT_JALAN_MATERIALS_SNAPSHOT_V1";
+const STORAGE_KEY_MATERIALS_META = "MTC_SURAT_JALAN_MATERIALS_META_V1";
+const MATERIAL_SUGGESTION_LIMIT = 100;
+const MATERIAL_CACHE_MAX_AGE = 15 * 60 * 1000;
 
 let sheetColumns = [];
 let allRecords = [];
@@ -11,6 +16,10 @@ let filteredRecords = [];
 let materialCatalog = []; // [{ code, partNo, itemName, itemSize, unit }]
 let selectedNoDoc = null;
 let currentView = "all"; // "all" | "detail"
+let hasCachedMaterialCatalog = false;
+let materialCatalogIsStale = true;
+let materialCatalogRevision = 0;
+let materialCatalogSyncPromise = null;
 
 function getGasUrl() {
   const saved = (localStorage.getItem(STORAGE_KEY_API) || "").trim();
@@ -113,22 +122,91 @@ document.addEventListener("DOMContentLoaded", () => {
   loadData(false, hasCachedData);
 });
 
+function scheduleIdleTask(callback) {
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(callback, { timeout: 1500 });
+  } else {
+    window.setTimeout(callback, 50);
+  }
+}
+
 function saveLocalSnapshot() {
   try {
     localStorage.setItem(STORAGE_KEY_SNAPSHOT, JSON.stringify({
       ts: Date.now(),
       columns: sheetColumns,
-      records: allRecords,
-      materials: materialCatalog
+      records: allRecords
     }));
+    localStorage.removeItem(STORAGE_KEY_LEGACY_SNAPSHOT);
   } catch (err) {
     console.warn("Gagal menyimpan cache Surat Jalan ke localStorage.", err);
   }
 }
 
+function saveMaterialCatalogSnapshot() {
+  scheduleIdleTask(() => {
+    try {
+      const ts = Date.now();
+      localStorage.setItem(STORAGE_KEY_MATERIALS, JSON.stringify({
+        ts,
+        materials: materialCatalog
+      }));
+      localStorage.setItem(STORAGE_KEY_MATERIALS_META, JSON.stringify({ ts }));
+    } catch (err) {
+      console.warn("Gagal menyimpan cache Material Code ke localStorage.", err);
+    }
+  });
+}
+
+function applyMaterialCatalog(materials, persistSnapshot = false, snapshotTime = Date.now()) {
+  materialCatalog = materials;
+  hasCachedMaterialCatalog = true;
+  materialCatalogIsStale = Date.now() - snapshotTime > MATERIAL_CACHE_MAX_AGE;
+  materialCatalogRevision++;
+  const activeInput = document.activeElement;
+  const query = activeInput && activeInput.classList &&
+    (activeInput.id === "editItemNo" || activeInput.classList.contains("inp-itemno"))
+    ? activeInput.value
+    : "";
+  renderMaterialDatalist(query);
+  if (persistSnapshot) saveMaterialCatalogSnapshot();
+}
+
+function restoreMaterialCatalogSnapshot(snapshotOrRaw, expectedRevision, persistSnapshot = false) {
+  scheduleIdleTask(() => {
+    if (materialCatalogRevision !== expectedRevision) return;
+    try {
+      let snapshot = snapshotOrRaw;
+      if (typeof snapshotOrRaw === "string") {
+        snapshot = JSON.parse(snapshotOrRaw);
+      } else {
+        if (!snapshot) {
+          const stored = localStorage.getItem(STORAGE_KEY_MATERIALS);
+          if (stored) snapshot = JSON.parse(stored);
+        }
+      }
+      if (!snapshot || !Array.isArray(snapshot.materials)) {
+        hasCachedMaterialCatalog = false;
+        materialCatalogIsStale = true;
+        loadMaterialCatalog();
+        return;
+      }
+      applyMaterialCatalog(snapshot.materials, persistSnapshot, Number(snapshot.ts) || 0);
+      if (materialCatalogIsStale) loadMaterialCatalog();
+    } catch (err) {
+      hasCachedMaterialCatalog = false;
+      materialCatalogIsStale = true;
+      console.warn("Gagal membaca cache Material Code dari localStorage.", err);
+      loadMaterialCatalog();
+    }
+  });
+}
+
 function restoreLocalSnapshot() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_SNAPSHOT);
+    const currentRaw = localStorage.getItem(STORAGE_KEY_SNAPSHOT);
+    const isLegacySnapshot = !currentRaw;
+    const raw = currentRaw || localStorage.getItem(STORAGE_KEY_LEGACY_SNAPSHOT);
     if (!raw) return false;
     const snapshot = JSON.parse(raw);
     if (!snapshot || !Array.isArray(snapshot.records)) return false;
@@ -137,9 +215,35 @@ function restoreLocalSnapshot() {
       ? snapshot.columns
       : getFallbackColumns();
     allRecords = snapshot.records;
-    materialCatalog = Array.isArray(snapshot.materials) ? snapshot.materials : [];
-    renderMaterialDatalist();
     applyFilters();
+
+    const expectedRevision = materialCatalogRevision;
+    if (Array.isArray(snapshot.materials)) {
+      hasCachedMaterialCatalog = true;
+      materialCatalogIsStale = Date.now() - (Number(snapshot.ts) || 0) > MATERIAL_CACHE_MAX_AGE;
+      restoreMaterialCatalogSnapshot({
+        ts: snapshot.ts,
+        materials: snapshot.materials
+      }, expectedRevision, true);
+      if (materialCatalogIsStale) loadMaterialCatalog();
+    } else {
+      const metaRaw = localStorage.getItem(STORAGE_KEY_MATERIALS_META);
+      let meta = null;
+      try {
+        meta = metaRaw ? JSON.parse(metaRaw) : null;
+      } catch (_) {
+        meta = null;
+      }
+      hasCachedMaterialCatalog = Boolean(meta && Number(meta.ts));
+      materialCatalogIsStale = !hasCachedMaterialCatalog ||
+        Date.now() - Number(meta.ts) > MATERIAL_CACHE_MAX_AGE;
+      if (hasCachedMaterialCatalog) {
+        restoreMaterialCatalogSnapshot(null, expectedRevision);
+      }
+      if (materialCatalogIsStale) loadMaterialCatalog();
+    }
+
+    if (isLegacySnapshot) saveLocalSnapshot();
     return true;
   } catch (err) {
     console.warn("Gagal membaca cache Surat Jalan dari localStorage.", err);
@@ -155,11 +259,18 @@ async function loadData(forceRefresh = false, silentBackground = false) {
         `<tr><td colspan="${colSpan}" class="empty-box">Memuat data silahkan tunggu...</td></tr>`;
     }
 
-    const res = await callGasApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
+    const res = await callGasApi({
+      action: "getData",
+      forceRefresh: Boolean(forceRefresh),
+      includeMaterials: false
+    });
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : getFallbackColumns();
     allRecords = res.records || [];
-    materialCatalog = Array.isArray(res.materials) ? res.materials : [];
-    renderMaterialDatalist();
+    if (Array.isArray(res.materials)) {
+      applyMaterialCatalog(res.materials, true);
+    } else if (forceRefresh || !hasCachedMaterialCatalog || materialCatalogIsStale) {
+      loadMaterialCatalog(forceRefresh);
+    }
     applyFilters();
     saveLocalSnapshot();
     if (!silentBackground || forceRefresh) showToast("Data Surat Jalan berhasil dimuat.", "success");
@@ -175,11 +286,40 @@ async function loadData(forceRefresh = false, silentBackground = false) {
   }
 }
 
-function renderMaterialDatalist() {
+function loadMaterialCatalog(forceRefresh = false) {
+  if (materialCatalogSyncPromise) return materialCatalogSyncPromise;
+  materialCatalogSyncPromise = callGasApi({
+    action: "getMaterials",
+    forceRefresh: Boolean(forceRefresh)
+  }).then(res => {
+    if (!Array.isArray(res.materials)) {
+      throw new Error("Respons GAS tidak menyertakan daftar Material Code.");
+    }
+    applyMaterialCatalog(res.materials, true);
+  }).catch(err => {
+    showToast(
+      hasCachedMaterialCatalog
+        ? `Cache Material Code ditampilkan, tetapi sinkronisasi gagal: ${err.message}`
+        : err.message,
+      "error",
+      "Sinkronisasi Material Code Gagal"
+    );
+  }).finally(() => {
+    materialCatalogSyncPromise = null;
+  });
+  return materialCatalogSyncPromise;
+}
+
+function renderMaterialDatalist(query = "") {
   const dl = document.getElementById("materialCodeDatalist");
   if (!dl) return;
-  dl.innerHTML = materialCatalog
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const matches = normalizedQuery.length >= 2
+    ? materialCatalog.filter(m => String(m.code || "").toLowerCase().startsWith(normalizedQuery))
+    : materialCatalog;
+  dl.innerHTML = matches
     .filter(m => m.code)
+    .slice(0, MATERIAL_SUGGESTION_LIMIT)
     .map(m => `<option value="${escapeHtml(m.code)}" label="${escapeHtml(m.itemName)}${m.unit ? ` (${m.unit})` : ""}"></option>`)
     .join("");
 }
@@ -199,6 +339,7 @@ function findMaterialMatch(rawVal) {
  */
 function handleItemNoInput(inputEl, isEditModal = false) {
   if (!inputEl) return;
+  renderMaterialDatalist(inputEl.value);
   const matched = findMaterialMatch(inputEl.value);
   if (!matched) return;
 
@@ -765,7 +906,7 @@ function saveApiConfig() {
   if (!val.startsWith("https://script.google.com/")) return showToast("URL harus diawali https://script.google.com/", "error");
   localStorage.setItem(STORAGE_KEY_API, val);
   closeApiConfigModal();
-  loadData();
+  loadData(true);
 }
 
 function escapeHtml(str) {
