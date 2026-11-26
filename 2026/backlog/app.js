@@ -700,8 +700,12 @@ function renderBacklogFormField(field, value, prefix) {
   } else if (["Anomaly/WO Description", "Action Required", "Sparepart Need", "Remarks"].includes(field)) {
     control = `<textarea ${common} rows="3">${escapeHtml(String(value ?? ""))}</textarea>`;
   } else {
-    const isReadOnly = field === "Equipment Name" || field === "Type";
-    const placeholder = field === "Equipment No" ? 'placeholder="Pilih dari Fixed Asset..." autocomplete="off"' : "";
+    const isReadOnly = field === "Type";
+    const placeholder = field === "Equipment No"
+      ? 'placeholder="Ketik atau pilih dari Fixed Asset..." autocomplete="off"'
+      : field === "Equipment Name"
+        ? 'placeholder="Ketik atau pilih dari Fixed Asset..." autocomplete="off"'
+        : "";
     control = `<input ${common} type="text" value="${escapeHtml(String(value ?? ""))}" ${isReadOnly ? "readonly" : ""} ${placeholder} />`;
   }
 
@@ -721,16 +725,30 @@ function bindBacklogAssetPicker(form) {
     equipmentNameInput.value = asset.equipmentName;
     typeInput.value = asset.type;
   };
-  equipmentNoInput.addEventListener("focus", () => showBacklogAssetPopup(equipmentNoInput));
-  equipmentNoInput.addEventListener("input", () => {
-    const exactMatch = fixedAssetCatalog.find(asset => asset.equipmentNo === equipmentNoInput.value.trim());
-    if (exactMatch) {
-      applyAsset(exactMatch);
-    } else {
-      equipmentNameInput.value = "";
+  [
+    { input: equipmentNoInput, key: "equipmentNo" },
+    { input: equipmentNameInput, key: "equipmentName" }
+  ].forEach(({ input, key }) => {
+    input.addEventListener("focus", () => showBacklogAssetPopup(input));
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      const exactMatches = query
+        ? fixedAssetCatalog.filter(asset => String(asset[key] || "").trim().toLowerCase() === query)
+        : [];
+      if (exactMatches.length === 1) {
+        applyAsset(exactMatches[0]);
+        hideBacklogAssetPopup();
+        return;
+      }
+
+      if (input === equipmentNoInput) {
+        equipmentNameInput.value = "";
+      } else {
+        equipmentNoInput.value = "";
+      }
       typeInput.value = "";
-    }
-    showBacklogAssetPopup(equipmentNoInput);
+      showBacklogAssetPopup(input);
+    });
   });
   form._applyBacklogAsset = applyAsset;
 }
