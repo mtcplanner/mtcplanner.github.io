@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Fixed Asset</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <link rel="stylesheet" href="../materialrequest/style.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="fixedasset-app">
+    <div class="toast-container" id="toastContainer"></div>
+
+    <header class="mr-header fixedasset-header">
+      <div class="mr-brand">
+        <span class="mr-pill">FIXED ASSET</span>
+        <span class="mr-meta" id="fixedAssetSummaryMeta">• Master Data Equipment</span>
+      </div>
+      <div class="mr-actions">
+        <button type="button" class="btn btn-ghost" id="btnApiConfig" style="display:none;" onclick="openApiConfigModal()">
+          <i class="bi bi-link-45deg"></i> API URL
+        </button>
+        <button type="button" class="btn btn-ghost" onclick="loadFixedAssets(true)">
+          <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <button type="button" class="btn btn-ghost" onclick="exportFixedAssets()">
+          <i class="bi bi-file-earmark-excel"></i> Export .xlsx
+        </button>
+        <button type="button" class="btn btn-primary" onclick="toggleCreateAssetForm()">
+          <i class="bi bi-plus-lg"></i> Tambah Aset
+        </button>
+      </div>
+    </header>
+
+    <section class="mr-toolbar fixedasset-toolbar">
+      <div class="kpi-row">
+        <div class="kpi-chip"><span class="k-lbl">Total Aset</span><span class="k-num" id="assetCount">0</span></div>
+        <div class="kpi-chip"><span class="k-lbl">Tipe</span><span class="k-num" id="assetTypeCount">0</span></div>
+        <div class="kpi-chip"><span class="k-lbl">Tanpa Serial No</span><span class="k-num" id="assetMissingSerialCount">0</span></div>
+      </div>
+      <div class="filter-row">
+        <select id="filterType" class="ctrl-select" aria-label="Filter tipe aset">
+          <option value="ALL">Semua Tipe</option>
+        </select>
+        <input type="text" id="filterSearch" class="ctrl-input fixedasset-search" placeholder="Cari Equipment No / nama / serial..." aria-label="Cari aset" />
+      </div>
+    </section>
+
+    <main class="fixedasset-content">
+      <section class="mr-detail-panel fixedasset-panel">
+        <div class="panel-head">
+          <span><i class="bi bi-hdd-stack"></i> Daftar Fixed Asset</span>
+          <span class="badge-count" id="visibleAssetCount">0</span>
+        </div>
+
+        <section class="fixedasset-create-panel" id="createAssetPanel" hidden>
+          <form id="createAssetForm" onsubmit="submitCreateAsset(event)">
+            <div class="fixedasset-create-heading">
+              <strong>Tambah Fixed Asset</strong>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="toggleCreateAssetForm(false)" aria-label="Tutup form tambah aset">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </div>
+            <div class="fixedasset-form-grid">
+              <div class="form-field"><label for="newEquipmentNo">Equipment No *</label><input id="newEquipmentNo" name="equipmentNo" class="ctrl-input" type="text" required /></div>
+              <div class="form-field"><label for="newEquipmentName">Equipment Name *</label><input id="newEquipmentName" name="equipmentName" class="ctrl-input" type="text" required /></div>
+              <div class="form-field"><label for="newType">Type</label><input id="newType" name="type" class="ctrl-input" type="text" /></div>
+              <div class="form-field"><label for="newSerialNo">Serial No</label><input id="newSerialNo" name="serialNo" class="ctrl-input" type="text" /></div>
+              <div class="form-field"><label for="newHm">HM</label><input id="newHm" name="hm" class="ctrl-input" type="number" min="0" step="any" /></div>
+              <div class="form-field"><label for="newLastServiceDate">Last Service Date</label><input id="newLastServiceDate" name="lastServiceDate" class="ctrl-input" type="date" /></div>
+              <div class="form-field"><label for="newLastOverhaulDate">Last Overhaul Date</label><input id="newLastOverhaulDate" name="lastOverhaulDate" class="ctrl-input" type="date" /></div>
+            </div>
+            <div class="fixedasset-form-actions">
+              <button type="button" class="btn btn-ghost" onclick="toggleCreateAssetForm(false)">Batal</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Simpan Aset</button>
+            </div>
+          </form>
+        </section>
+
+        <div class="fixedasset-table-scroll">
+          <table class="mr-table fixedasset-table">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Equipment No</th>
+                <th>Equipment Name</th>
+                <th>Type</th>
+                <th>Serial No</th>
+                <th>HM</th>
+                <th>Last Service Date</th>
+                <th>Last Overhaul Date</th>
+                <th class="fixedasset-action-heading">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="fixedAssetTableBody">
+              <tr><td colspan="9" class="empty-box">Memuat data Fixed Asset...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn-ghost fixedasset-show-more" id="btnShowAllAssets" onclick="showAllAssets()" hidden>
+          Tampilkan semua aset
+        </button>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="apiConfigModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-gear"></i> Konfigurasi Endpoint GAS</h3>
+        <button type="button" class="modal-close" onclick="closeApiConfigModal()" aria-label="Tutup">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label for="gasApiUrlInput">URL Web App Google Apps Script</label>
+          <input type="url" id="gasApiUrlInput" class="ctrl-input" placeholder="https://script.google.com/macros/s/.../exec" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfigModal()">Tutup</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan &amp; Muat</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

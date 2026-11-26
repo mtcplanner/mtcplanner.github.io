@@ -1,0 +1,228 @@
+.fixedasset-app {
+  height: 100vh;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fixedasset-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  flex: 0 0 auto;
+  margin-top: 0;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.fixedasset-toolbar {
+  flex: 0 0 auto;
+}
+
+.fixedasset-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 0 10px 10px;
+}
+
+.fixedasset-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fixedasset-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fixedasset-table {
+  min-width: 1120px;
+}
+
+.fixedasset-table thead th {
+  top: 0;
+  z-index: 12;
+}
+
+.fixedasset-table tbody td {
+  vertical-align: middle;
+}
+
+.fixedasset-table th:first-child,
+.fixedasset-table td:first-child,
+.fixedasset-table th:nth-child(2),
+.fixedasset-table td:nth-child(2),
+.fixedasset-table th:nth-child(6),
+.fixedasset-table td:nth-child(6),
+.fixedasset-table th:nth-child(7),
+.fixedasset-table td:nth-child(7),
+.fixedasset-table th:nth-child(8),
+.fixedasset-table td:nth-child(8),
+.fixedasset-table .fixedasset-action-heading,
+.fixedasset-table .fixedasset-actions-cell {
+  text-align: center;
+}
+
+.fixedasset-table th:nth-child(1),
+.fixedasset-table td:nth-child(1) { width: 48px; }
+.fixedasset-table th:nth-child(2),
+.fixedasset-table td:nth-child(2) { min-width: 125px; }
+.fixedasset-table th:nth-child(3),
+.fixedasset-table td:nth-child(3) { min-width: 210px; white-space: normal; }
+.fixedasset-table th:nth-child(4),
+.fixedasset-table td:nth-child(4) { min-width: 125px; }
+.fixedasset-table th:nth-child(5),
+.fixedasset-table td:nth-child(5) { min-width: 145px; }
+.fixedasset-table th:nth-child(6),
+.fixedasset-table td:nth-child(6) { min-width: 90px; }
+.fixedasset-table th:nth-child(7),
+.fixedasset-table td:nth-child(7),
+.fixedasset-table th:nth-child(8),
+.fixedasset-table td:nth-child(8) { min-width: 145px; }
+.fixedasset-table th:last-child,
+.fixedasset-table td:last-child { min-width: 145px; }
+
+.fixedasset-table .fixedasset-actions-cell {
+  white-space: nowrap;
+}
+
+.fixedasset-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.fixedasset-row-actions .btn-danger {
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #dc2626;
+}
+
+.fixedasset-row-actions .btn-danger:hover {
+  background: #fef2f2;
+}
+
+.fixedasset-table input.ctrl-input {
+  width: 100%;
+  min-width: 90px;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+
+.fixedasset-table td:nth-child(3) input {
+  min-width: 190px;
+}
+
+.fixedasset-create-panel {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: #f8fafc;
+}
+
+.fixedasset-create-panel[hidden],
+.fixedasset-show-more[hidden] {
+  display: none !important;
+}
+
+.fixedasset-create-heading,
+.fixedasset-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fixedasset-create-heading {
+  margin-bottom: 9px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.fixedasset-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px 10px;
+}
+
+.fixedasset-form-grid .form-field {
+  min-width: 0;
+}
+
+.fixedasset-form-grid label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.fixedasset-form-grid .ctrl-input {
+  width: 100%;
+}
+
+.fixedasset-form-actions {
+  justify-content: flex-end;
+  margin-top: 9px;
+}
+
+.fixedasset-search {
+  width: 260px;
+}
+
+.fixedasset-show-more {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 6px 0;
+}
+
+.fixedasset-loading-cell,
+.fixedasset-empty-cell {
+  padding: 24px !important;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+#apiConfigModal {
+  display: none;
+}
+
+#apiConfigModal.show {
+  display: flex;
+}
+
+@media (max-width: 800px) {
+  .fixedasset-app {
+    height: 100dvh;
+  }
+
+  .fixedasset-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fixedasset-toolbar {
+    gap: 8px;
+  }
+
+  .fixedasset-form-grid {
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+  }
+
+  .fixedasset-search {
+    width: min(100%, 260px);
+  }
+}
+
+@media (max-width: 480px) {
+  .fixedasset-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
