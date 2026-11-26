@@ -4,10 +4,14 @@
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbybA4vjnZb-79VAHSO0Gb7fQCS6JSxjdQN8SF-fJhOeVIe2IFMbb2OxeP7rAc67T20tww/exec";
 const STORAGE_KEY_API = "MTC_INPUT_RH_GAS_URL";
 const STORAGE_KEY_SNAPSHOT = "MTC_INPUT_RH_DATA_SNAPSHOT_V1";
+const STORAGE_KEY_FIXED_ASSET_CATALOG = "MTC_INPUT_RH_FIXED_ASSET_CATALOG_V1";
 
 let sheetColumns = [];
 let sheetRows = [];
 let sheetDate = "";
+let inputRhAssetCatalog = [];
+let legacyInputRhAssetCatalogTimestamp = 0;
+let selectedNewEquipmentAsset = null;
 let pendingUpdates = new Map(); // "rowIndex_colIndex" -> { rowIndex, colIndex, value }
 let pendingNewRows = [];
 let selectedRowKey = null;    // rowIndex angka atau "NEW_0"
@@ -20,14 +24,15 @@ function getGasUrl() {
 
 function showToast(message, type = "success", title = "") {
   const container = document.getElementById("toastContainer");
+  if (!container) return;
   const toast = document.createElement("div");
   toast.className = `toast-card toast-${type}`;
   const icon = type === "success" ? "✓" : (type === "error" ? "✕" : "i");
   toast.innerHTML = `
     <div class="toast-icon">${icon}</div>
     <div>
-      <div class="toast-title">${title || (type === "success" ? "Berhasil" : type === "error" ? "Gagal" : "Info")}</div>
-      <div class="toast-message">${message}</div>
+      <div class="toast-title">${escapeHtml(title || (type === "success" ? "Berhasil" : type === "error" ? "Gagal" : "Info"))}</div>
+      <div class="toast-message">${escapeHtml(message)}</div>
     </div>
   `;
   container.appendChild(toast);
@@ -55,11 +60,85 @@ async function callGasApi(payload) {
   return data;
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+function normalizeInputRhAssetCatalog(records) {
+  return records.map(asset => ({
+    equipmentNo: String(asset.equipmentNo || "").trim(),
+    serialNo: String(asset.serialNo || "").trim(),
+    equipmentName: String(asset.equipmentName || "").trim(),
+    type: String(asset.type || "").trim()
+  })).filter(asset => asset.equipmentNo);
+}
+
+async function restoreInputRhAssetCatalog() {
+  try {
+    const snapshot = await MTCFixedAssetCatalogCache.getSnapshot();
+    if (snapshot && Array.isArray(snapshot.records)) {
+      inputRhAssetCatalog = normalizeInputRhAssetCatalog(snapshot.records);
+      try {
+        localStorage.removeItem(STORAGE_KEY_FIXED_ASSET_CATALOG);
+      } catch (error) {
+        console.warn("Cache lama Fixed Asset di localStorage tidak dapat dihapus.", error);
+      }
+      return inputRhAssetCatalog.length > 0;
+    }
+  } catch (error) {
+    console.warn("Cache bersama Fixed Asset tidak dapat dibaca untuk Input RH.", error);
+  }
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_FIXED_ASSET_CATALOG);
+    if (!raw) return false;
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || !Array.isArray(snapshot.assets)) return false;
+    inputRhAssetCatalog = normalizeInputRhAssetCatalog(snapshot.assets);
+    legacyInputRhAssetCatalogTimestamp = Number(snapshot.savedAt) || 0;
+    return inputRhAssetCatalog.length > 0;
+  } catch (err) {
+    console.warn("Gagal membaca cache Fixed Asset untuk Input RH.", err);
+    return false;
+  }
+}
+
+async function loadInputRhAssetCatalog(showSuccess = false, forceRefresh = showSuccess) {
+  try {
+    const snapshot = await MTCFixedAssetCatalogCache.loadCatalog({
+      forceRefresh,
+      fallbackRecords: inputRhAssetCatalog,
+      fallbackUpdatedAt: legacyInputRhAssetCatalogTimestamp
+    });
+    inputRhAssetCatalog = normalizeInputRhAssetCatalog(snapshot.records);
+    legacyInputRhAssetCatalogTimestamp = 0;
+    try {
+      localStorage.removeItem(STORAGE_KEY_FIXED_ASSET_CATALOG);
+    } catch (error) {
+      console.warn("Cache lama Fixed Asset di localStorage tidak dapat dihapus.", error);
+    }
+    if (snapshot.error) {
+      showToast(`Cache Fixed Asset tetap digunakan, tetapi sinkronisasi gagal: ${snapshot.error}`, "error", "Katalog Fixed Asset");
+    } else if (showSuccess) {
+      showToast(`Katalog Fixed Asset diperbarui (${inputRhAssetCatalog.length} aset).`, "success");
+    }
+  } catch (error) {
+    const message = inputRhAssetCatalog.length
+      ? `Gagal menyinkronkan katalog Fixed Asset. Data cache tetap digunakan. ${error.message}`
+      : error.message;
+    showToast(message, "error", "Katalog Fixed Asset");
+  }
+}
+
+function refreshInputRhData() {
+  loadSheetData();
+  loadInputRhAssetCatalog(true);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   window._preferredMonth = months[new Date().getMonth()];
   const hasCachedData = restoreLocalSnapshot();
+  await restoreInputRhAssetCatalog();
+  bindNewEquipmentAssetAutocomplete();
   loadSheetData(hasCachedData);
+  loadInputRhAssetCatalog(false);
   setupClipboardPaste();
 });
 
@@ -273,7 +352,7 @@ function renderAssetList() {
       <div class="asset-item ${isActive ? "active" : ""}" onclick="selectUnitRow('${r.rowIndex}')">
         <div>
           <div class="asset-name">${escapeHtml(eqName)}</div>
-          <div class="asset-sub">C/N: ${escapeHtml(cn)} • ${escapeHtml(type)}</div>
+          <div class="asset-sub">Equipment No: ${escapeHtml(cn)} • ${escapeHtml(type)}</div>
         </div>
         <span class="asset-rig-tag">${escapeHtml(rig)}</span>
       </div>
@@ -615,12 +694,9 @@ function handleGridNav(e, inputEl) {
 // ============================================================
 // SAVE, ADD, DELETE & API MODAL
 // ============================================================
-async function saveAllChanges() {
-  const updates = Array.from(pendingUpdates.values());
-  if (!updates.length && !pendingNewRows.length) return showToast("Tidak ada perubahan untuk disimpan.", "info");
-
+function showInputRhLoading(title) {
   Swal.fire({
-    title: "Menyimpan perubahan",
+    title,
     html: `
       <div class="save-loading-content" role="status" aria-live="polite">
         <span class="save-loading-spinner" aria-hidden="true"></span>
@@ -635,32 +711,211 @@ async function saveAllChanges() {
     allowOutsideClick: false,
     allowEscapeKey: false
   });
+}
+
+async function saveAllChanges() {
+  const updates = Array.from(pendingUpdates.values());
+  if (!updates.length && !pendingNewRows.length) return showToast("Tidak ada perubahan untuk disimpan.", "info");
+
+  showInputRhLoading("Menyimpan perubahan");
   try {
     const res = await callGasApi({ action: "saveBulk", updates, newRows: pendingNewRows });
     Swal.close();
     applyServerData(res, false);
     showToast("Perubahan berhasil disimpan.", "success");
   } catch (err) {
-    Swal.fire({ icon: "error", title: "Gagal Simpan", text: err.message });
+    Swal.close();
+    showToast(err.message, "error", "Gagal Simpan");
   }
 }
 
 function openAddEqModal() { document.getElementById("addEqModal").classList.add("active"); }
-function closeAddEqModal() { document.getElementById("addEqModal").classList.remove("active"); }
+function closeAddEqModal() {
+  hideNewEquipmentAssetSuggestions();
+  document.getElementById("addEqModal").classList.remove("active");
+}
+
+function bindNewEquipmentAssetAutocomplete() {
+  const fieldConfig = [
+    ["newEqEquipmentNo", "equipmentNo"],
+    ["newEqSerialNo", "serialNo"],
+    ["newEqName", "equipmentName"]
+  ];
+
+  fieldConfig.forEach(([elementId, field]) => {
+    const input = document.getElementById(elementId);
+    if (!input || input.dataset.assetPickerBound === "1") return;
+    input.dataset.assetPickerBound = "1";
+    input.addEventListener("focus", () => showNewEquipmentAssetSuggestions(input));
+    input.addEventListener("input", () => {
+      const exact = findExactNewEquipmentAsset(field, input.value);
+      if (exact) {
+        applyNewEquipmentAsset(exact);
+      } else {
+        clearNewEquipmentAssetMatch(input);
+        showNewEquipmentAssetSuggestions(input);
+      }
+    });
+    input.addEventListener("keydown", event => {
+      if (event.key === "Escape") hideNewEquipmentAssetSuggestions();
+      if (event.key === "Enter") {
+        const popup = document.getElementById("newEqAssetSuggestPopup");
+        const firstOption = popup && popup.querySelector("button");
+        if (firstOption && popup.style.display !== "none") {
+          event.preventDefault();
+          firstOption.click();
+        }
+      }
+    });
+  });
+
+  document.addEventListener("mousedown", event => {
+    if (!event.target.closest(".new-equipment-asset-suggest") &&
+        !event.target.closest(".new-equipment-asset-input")) {
+      hideNewEquipmentAssetSuggestions();
+    }
+  });
+}
+
+function findExactNewEquipmentAsset(field, value) {
+  const query = String(value || "").trim();
+  if (!query) return null;
+  const lowerQuery = query.toLocaleLowerCase();
+  const matches = inputRhAssetCatalog.filter(asset => {
+    const assetValue = String(asset[field] || "").trim();
+    return field === "equipmentNo"
+      ? assetValue === query
+      : assetValue.toLocaleLowerCase() === lowerQuery;
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function searchInputRhAssets(query) {
+  const q = String(query || "").trim().toLocaleLowerCase();
+  const matches = q
+    ? inputRhAssetCatalog.filter(asset =>
+      [asset.equipmentNo, asset.serialNo, asset.equipmentName, asset.type]
+        .some(value => String(value || "").toLocaleLowerCase().includes(q))
+    )
+    : inputRhAssetCatalog;
+  return matches.slice(0, 40);
+}
+
+function showNewEquipmentAssetSuggestions(input) {
+  const popup = getNewEquipmentAssetPopup();
+  const matches = searchInputRhAssets(input.value);
+  popup._matches = matches;
+
+  if (!inputRhAssetCatalog.length) {
+    popup.innerHTML = '<div class="new-equipment-asset-empty">Katalog Fixed Asset belum tersedia.</div>';
+  } else if (!matches.length) {
+    popup.innerHTML = '<div class="new-equipment-asset-empty">Fixed Asset tidak ditemukan.</div>';
+  } else {
+    popup.innerHTML = matches.map((asset, index) => `
+      <button type="button" class="new-equipment-asset-option" onmousedown="event.preventDefault()" onclick="selectNewEquipmentAsset(${index})">
+        <span class="new-equipment-asset-option-head">
+          <strong>${escapeHtml(asset.equipmentNo || "-")}</strong>
+          <small>${escapeHtml(asset.serialNo || "Tanpa Serial No")}</small>
+        </span>
+        <span>${escapeHtml(asset.equipmentName || "-")}</span>
+        <small>${escapeHtml(asset.type || "-")}</small>
+      </button>
+    `).join("");
+  }
+
+  const rect = input.getBoundingClientRect();
+  popup.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 380))}px`;
+  popup.style.top = `${Math.min(rect.bottom + 3, window.innerHeight - 250)}px`;
+  popup.style.width = `${Math.max(280, Math.min(rect.width, window.innerWidth - 16))}px`;
+  popup.style.display = "block";
+}
+
+function getNewEquipmentAssetPopup() {
+  let popup = document.getElementById("newEqAssetSuggestPopup");
+  if (!popup) {
+    popup = document.createElement("div");
+    popup.id = "newEqAssetSuggestPopup";
+    popup.className = "new-equipment-asset-suggest";
+    popup.style.display = "none";
+    document.body.appendChild(popup);
+  }
+  return popup;
+}
+
+function applyNewEquipmentAsset(asset) {
+  selectedNewEquipmentAsset = asset;
+  document.getElementById("newEqEquipmentNo").value = asset.equipmentNo;
+  document.getElementById("newEqSerialNo").value = asset.serialNo;
+  document.getElementById("newEqName").value = asset.equipmentName;
+  document.getElementById("newEqType").value = asset.type;
+  ["newEqEquipmentNo", "newEqSerialNo", "newEqName", "newEqType"].forEach(id => {
+    const input = document.getElementById(id);
+    input.classList.remove("invalid-match");
+    input.classList.add("valid-match");
+  });
+  hideNewEquipmentAssetSuggestions();
+}
+
+function clearNewEquipmentAssetMatch(activeInput) {
+  selectedNewEquipmentAsset = null;
+  ["newEqEquipmentNo", "newEqSerialNo", "newEqName", "newEqType"].forEach(id => {
+    const input = document.getElementById(id);
+    input.classList.remove("valid-match", "invalid-match");
+    if (input !== activeInput) input.value = "";
+  });
+}
+
+function selectNewEquipmentAsset(index) {
+  const popup = document.getElementById("newEqAssetSuggestPopup");
+  const asset = popup && popup._matches ? popup._matches[index] : null;
+  if (asset) applyNewEquipmentAsset(asset);
+}
+
+function hideNewEquipmentAssetSuggestions() {
+  const popup = document.getElementById("newEqAssetSuggestPopup");
+  if (popup) popup.style.display = "none";
+}
+
+function resetNewEquipmentForm() {
+  ["newEqEquipmentNo", "newEqSerialNo", "newEqName", "newEqType", "newEqRig"].forEach(id => {
+    const input = document.getElementById(id);
+    input.value = "";
+    input.classList.remove("valid-match", "invalid-match");
+  });
+  document.getElementById("newEqSatuan").value = "Jam";
+  document.getElementById("newEqAwal").value = "0";
+  selectedNewEquipmentAsset = null;
+}
 
 async function submitNewEquipment() {
+  const equipmentNo = document.getElementById("newEqEquipmentNo").value.trim();
+  const serialNo = document.getElementById("newEqSerialNo").value.trim();
   const name = document.getElementById("newEqName").value.trim();
+  const selected = selectedNewEquipmentAsset;
+  const selectedAsset = selected && inputRhAssetCatalog.find(asset =>
+    asset.equipmentNo === selected.equipmentNo &&
+    asset.serialNo === selected.serialNo &&
+    asset.equipmentName === selected.equipmentName &&
+    asset.type === selected.type
+  );
+  if (!selectedAsset ||
+      selectedAsset.equipmentNo !== equipmentNo ||
+      selectedAsset.serialNo !== serialNo ||
+      selectedAsset.equipmentName !== name) {
+    return showToast("Pilih Equipment No, Serial No, atau Equipment Name dari daftar Fixed Asset.", "error", "Pilih Fixed Asset");
+  }
   if (!name) return showToast("Equipment Name wajib diisi.", "error");
+
   closeAddEqModal();
-  Swal.fire({ title: "Menambah Unit...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  showInputRhLoading("Menambah Unit");
   try {
     const res = await callGasApi({
       action: "addEquipment",
       equipment: {
-        name,
-        cn: document.getElementById("newEqCn").value.trim(),
-        sn: document.getElementById("newEqSn").value.trim(),
-        type: document.getElementById("newEqType").value.trim(),
+        name: selectedAsset.equipmentName,
+        equipmentNo: selectedAsset.equipmentNo,
+        serialNo: selectedAsset.serialNo,
+        type: selectedAsset.type,
         rig: document.getElementById("newEqRig").value.trim(),
         satuan: document.getElementById("newEqSatuan").value.trim() || "Jam",
         awal: Number(document.getElementById("newEqAwal").value) || 0
@@ -668,9 +923,12 @@ async function submitNewEquipment() {
     });
     Swal.close();
     applyServerData(res, false);
-    showToast(`Unit "${name}" ditambahkan.`, "success");
+    resetNewEquipmentForm();
+    showToast(`Unit "${selectedAsset.equipmentName}" ditambahkan.`, "success");
   } catch (err) {
-    Swal.fire({ icon: "error", title: "Gagal", text: err.message });
+    Swal.close();
+    openAddEqModal();
+    showToast(err.message, "error", "Gagal Menambahkan Unit");
   }
 }
 
@@ -684,7 +942,7 @@ function confirmDeleteRow(rowIndex, eqName) {
     confirmButtonText: "Ya, Hapus"
   }).then(async (result) => {
     if (!result.isConfirmed) return;
-    Swal.fire({ title: "Menghapus...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    showInputRhLoading("Menghapus Unit");
     try {
       const res = await callGasApi({ action: "deleteEquipment", rowIndex });
       Swal.close();
@@ -692,7 +950,8 @@ function confirmDeleteRow(rowIndex, eqName) {
       applyServerData(res, false);
       showToast("Unit dihapus.", "success");
     } catch (err) {
-      Swal.fire({ icon: "error", title: "Gagal", text: err.message });
+      Swal.close();
+      showToast(err.message, "error", "Gagal Menghapus Unit");
     }
   });
 }

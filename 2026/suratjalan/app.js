@@ -18,8 +18,9 @@ let selectedNoDoc = null;
 let currentView = "all"; // "all" | "detail"
 let hasCachedMaterialCatalog = false;
 let materialCatalogIsStale = true;
-let materialCatalogRevision = 0;
 let materialCatalogSyncPromise = null;
+let legacyMaterialCatalog = [];
+let legacyMaterialCatalogTimestamp = 0;
 
 function getGasUrl() {
   const saved = (localStorage.getItem(STORAGE_KEY_API) || "").trim();
@@ -120,15 +121,8 @@ document.addEventListener("DOMContentLoaded", () => {
   applyDeveloperAccess();
   const hasCachedData = restoreLocalSnapshot();
   loadData(false, hasCachedData);
+  loadMaterialCatalog();
 });
-
-function scheduleIdleTask(callback) {
-  if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(callback, { timeout: 1500 });
-  } else {
-    window.setTimeout(callback, 50);
-  }
-}
 
 function saveLocalSnapshot() {
   try {
@@ -143,63 +137,16 @@ function saveLocalSnapshot() {
   }
 }
 
-function saveMaterialCatalogSnapshot() {
-  scheduleIdleTask(() => {
-    try {
-      const ts = Date.now();
-      localStorage.setItem(STORAGE_KEY_MATERIALS, JSON.stringify({
-        ts,
-        materials: materialCatalog
-      }));
-      localStorage.setItem(STORAGE_KEY_MATERIALS_META, JSON.stringify({ ts }));
-    } catch (err) {
-      console.warn("Gagal menyimpan cache Material Code ke localStorage.", err);
-    }
-  });
-}
-
-function applyMaterialCatalog(materials, persistSnapshot = false, snapshotTime = Date.now()) {
+function applyMaterialCatalog(materials, snapshotTime = Date.now()) {
   materialCatalog = materials;
   hasCachedMaterialCatalog = true;
   materialCatalogIsStale = Date.now() - snapshotTime > MATERIAL_CACHE_MAX_AGE;
-  materialCatalogRevision++;
   const activeInput = document.activeElement;
   const query = activeInput && activeInput.classList &&
     (activeInput.id === "editItemNo" || activeInput.classList.contains("inp-itemno"))
     ? activeInput.value
     : "";
   renderMaterialDatalist(query);
-  if (persistSnapshot) saveMaterialCatalogSnapshot();
-}
-
-function restoreMaterialCatalogSnapshot(snapshotOrRaw, expectedRevision, persistSnapshot = false) {
-  scheduleIdleTask(() => {
-    if (materialCatalogRevision !== expectedRevision) return;
-    try {
-      let snapshot = snapshotOrRaw;
-      if (typeof snapshotOrRaw === "string") {
-        snapshot = JSON.parse(snapshotOrRaw);
-      } else {
-        if (!snapshot) {
-          const stored = localStorage.getItem(STORAGE_KEY_MATERIALS);
-          if (stored) snapshot = JSON.parse(stored);
-        }
-      }
-      if (!snapshot || !Array.isArray(snapshot.materials)) {
-        hasCachedMaterialCatalog = false;
-        materialCatalogIsStale = true;
-        loadMaterialCatalog();
-        return;
-      }
-      applyMaterialCatalog(snapshot.materials, persistSnapshot, Number(snapshot.ts) || 0);
-      if (materialCatalogIsStale) loadMaterialCatalog();
-    } catch (err) {
-      hasCachedMaterialCatalog = false;
-      materialCatalogIsStale = true;
-      console.warn("Gagal membaca cache Material Code dari localStorage.", err);
-      loadMaterialCatalog();
-    }
-  });
 }
 
 function restoreLocalSnapshot() {
@@ -207,44 +154,45 @@ function restoreLocalSnapshot() {
     const currentRaw = localStorage.getItem(STORAGE_KEY_SNAPSHOT);
     const isLegacySnapshot = !currentRaw;
     const raw = currentRaw || localStorage.getItem(STORAGE_KEY_LEGACY_SNAPSHOT);
-    if (!raw) return false;
-    const snapshot = JSON.parse(raw);
-    if (!snapshot || !Array.isArray(snapshot.records)) return false;
-
-    sheetColumns = Array.isArray(snapshot.columns) && snapshot.columns.length > 0
-      ? snapshot.columns
-      : getFallbackColumns();
-    allRecords = snapshot.records;
-    applyFilters();
-
-    const expectedRevision = materialCatalogRevision;
-    if (Array.isArray(snapshot.materials)) {
-      hasCachedMaterialCatalog = true;
-      materialCatalogIsStale = Date.now() - (Number(snapshot.ts) || 0) > MATERIAL_CACHE_MAX_AGE;
-      restoreMaterialCatalogSnapshot({
-        ts: snapshot.ts,
-        materials: snapshot.materials
-      }, expectedRevision, true);
-      if (materialCatalogIsStale) loadMaterialCatalog();
-    } else {
-      const metaRaw = localStorage.getItem(STORAGE_KEY_MATERIALS_META);
-      let meta = null;
-      try {
-        meta = metaRaw ? JSON.parse(metaRaw) : null;
-      } catch (_) {
-        meta = null;
-      }
-      hasCachedMaterialCatalog = Boolean(meta && Number(meta.ts));
-      materialCatalogIsStale = !hasCachedMaterialCatalog ||
-        Date.now() - Number(meta.ts) > MATERIAL_CACHE_MAX_AGE;
-      if (hasCachedMaterialCatalog) {
-        restoreMaterialCatalogSnapshot(null, expectedRevision);
-      }
-      if (materialCatalogIsStale) loadMaterialCatalog();
+    const snapshot = raw ? JSON.parse(raw) : null;
+    const hasSnapshot = Boolean(snapshot && Array.isArray(snapshot.records));
+    if (hasSnapshot) {
+      sheetColumns = Array.isArray(snapshot.columns) && snapshot.columns.length > 0
+        ? snapshot.columns
+        : getFallbackColumns();
+      allRecords = snapshot.records;
+      applyFilters();
     }
 
-    if (isLegacySnapshot) saveLocalSnapshot();
-    return true;
+    let legacySnapshot = hasSnapshot && Array.isArray(snapshot.materials)
+      ? { ts: snapshot.ts, materials: snapshot.materials }
+      : null;
+    if (!legacySnapshot) {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY_MATERIALS);
+        legacySnapshot = stored ? JSON.parse(stored) : null;
+      } catch (err) {
+        console.warn("Gagal membaca cache lama Material Code.", err);
+      }
+    }
+    if (legacySnapshot && Array.isArray(legacySnapshot.materials)) {
+      legacyMaterialCatalog = legacySnapshot.materials;
+      legacyMaterialCatalogTimestamp = Number(legacySnapshot.ts) || 0;
+      applyMaterialCatalog(legacyMaterialCatalog, legacyMaterialCatalogTimestamp);
+    } else {
+      const metaRaw = localStorage.getItem(STORAGE_KEY_MATERIALS_META);
+      try {
+        const meta = metaRaw ? JSON.parse(metaRaw) : null;
+        legacyMaterialCatalogTimestamp = Number(meta && meta.ts) || 0;
+      } catch (err) {
+        console.warn("Metadata cache lama Material Code tidak dapat dibaca.", err);
+      }
+      hasCachedMaterialCatalog = false;
+      materialCatalogIsStale = true;
+    }
+
+    if (hasSnapshot && isLegacySnapshot) saveLocalSnapshot();
+    return hasSnapshot;
   } catch (err) {
     console.warn("Gagal membaca cache Surat Jalan dari localStorage.", err);
     return false;
@@ -252,6 +200,9 @@ function restoreLocalSnapshot() {
 }
 
 async function loadData(forceRefresh = false, silentBackground = false) {
+  if (forceRefresh || !hasCachedMaterialCatalog || materialCatalogIsStale) {
+    loadMaterialCatalog(forceRefresh);
+  }
   try {
     if (!silentBackground) {
       const colSpan = Math.max(sheetColumns.length + 2, 11);
@@ -261,15 +212,15 @@ async function loadData(forceRefresh = false, silentBackground = false) {
 
     const res = await callGasApi({
       action: "getData",
-      forceRefresh: Boolean(forceRefresh),
-      includeMaterials: false
+      forceRefresh: Boolean(forceRefresh)
     });
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : getFallbackColumns();
     allRecords = res.records || [];
-    if (Array.isArray(res.materials)) {
-      applyMaterialCatalog(res.materials, true);
-    } else if (forceRefresh || !hasCachedMaterialCatalog || materialCatalogIsStale) {
-      loadMaterialCatalog(forceRefresh);
+    if (!hasCachedMaterialCatalog && Array.isArray(res.materials) && res.materials.length) {
+      applyMaterialCatalog(res.materials);
+      MTCMaterialCatalogCache.seedCatalog(res.materials).catch(err => {
+        console.warn("Katalog fallback tidak dapat disimpan ke cache bersama.", err);
+      });
     }
     applyFilters();
     saveLocalSnapshot();
@@ -288,14 +239,25 @@ async function loadData(forceRefresh = false, silentBackground = false) {
 
 function loadMaterialCatalog(forceRefresh = false) {
   if (materialCatalogSyncPromise) return materialCatalogSyncPromise;
-  materialCatalogSyncPromise = callGasApi({
-    action: "getMaterials",
-    forceRefresh: Boolean(forceRefresh)
-  }).then(res => {
-    if (!Array.isArray(res.materials)) {
-      throw new Error("Respons GAS tidak menyertakan daftar Material Code.");
+  materialCatalogSyncPromise = MTCMaterialCatalogCache.loadCatalog({
+    forceRefresh: Boolean(forceRefresh),
+    fallbackRecords: legacyMaterialCatalog,
+    fallbackUpdatedAt: legacyMaterialCatalogTimestamp
+  }).then(snapshot => {
+    applyMaterialCatalog(snapshot.records, Number(snapshot.updatedAt) || Date.now());
+    if (snapshot.error) {
+      showToast(
+        `Cache Material Code ditampilkan, tetapi sinkronisasi gagal: ${snapshot.error}`,
+        "error",
+        "Sinkronisasi Material Code Gagal"
+      );
     }
-    applyMaterialCatalog(res.materials, true);
+    try {
+      localStorage.removeItem(STORAGE_KEY_MATERIALS);
+      localStorage.removeItem(STORAGE_KEY_MATERIALS_META);
+    } catch (err) {
+      console.warn("Cache lama Material Code tidak dapat dihapus.", err);
+    }
   }).catch(err => {
     showToast(
       hasCachedMaterialCatalog
@@ -305,6 +267,7 @@ function loadMaterialCatalog(forceRefresh = false) {
       "Sinkronisasi Material Code Gagal"
     );
   }).finally(() => {
+    legacyMaterialCatalog = [];
     materialCatalogSyncPromise = null;
   });
   return materialCatalogSyncPromise;

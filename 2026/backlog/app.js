@@ -1,8 +1,6 @@
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbyx6AJxSK14IgU0tPyC25--L7QnJmvc-Xvse_waTG7JcmM9Z_o2tIPosHzHGlm_c5SF/exec";
 const STORAGE_KEY_API = "MTC_BACKLOG_GAS_URL";
 const STORAGE_KEY_SNAPSHOT = "MTC_BACKLOG_DATA_SNAPSHOT_V1";
-const STORAGE_KEY_MR_API = "MTC_MATERIAL_REQUEST_GAS_URL";
-const DEFAULT_MR_GAS_URL = "https://script.google.com/macros/s/AKfycbzXTiknzZQk5KULVx7SQui7ur2QYgIy81pTvmTGtXH_I-pTKb2Vf6TzdrNaYeUElExF/exec";
 const INITIAL_RENDER_ROW_LIMIT = 250;
 
 const BACKLOG_FIELDS = [
@@ -62,6 +60,7 @@ let activeBacklogAssetInput = null;
 let showAllRowsOverride = false;
 let printRestoreState = null;
 let filterDebounceTimer = null;
+let legacyFixedAssetCatalogTimestamp = 0;
 
 function getGasUrl() {
   const saved = (localStorage.getItem(STORAGE_KEY_API) || "").trim();
@@ -163,46 +162,20 @@ async function callGasApi(payload) {
 }
 
 async function loadFixedAssetCatalog(forceRefresh = false) {
-  const savedUrl = (localStorage.getItem(STORAGE_KEY_MR_API) || "").trim();
-  const url = savedUrl && !savedUrl.includes("GANTI_DENGAN_ID_DEPLOYMENT")
-    ? savedUrl
-    : DEFAULT_MR_GAS_URL;
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      mode: "cors",
-      redirect: "follow",
-      credentials: "omit",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "getData", forceRefresh: Boolean(forceRefresh) })
-    });
-  } catch (_) {
-    throw new Error("Gagal terhubung ke katalog Fixed Asset dari Material Request.");
-  }
-
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (_) {
-    throw new Error("Respons katalog Fixed Asset bukan JSON valid.");
-  }
-  if (!response.ok || data.status === "error" || data.success === false) {
-    throw new Error(data.message || `Gagal memuat katalog Fixed Asset (${response.status}).`);
-  }
-  if (!Array.isArray(data.assets)) {
-    throw new Error("Respons Material Request tidak menyertakan daftar Fixed Asset.");
-  }
-
-  fixedAssetCatalog = data.assets
-    .map(asset => ({
-      equipmentNo: String(asset.equipmentNo || "").trim(),
-      equipmentName: String(asset.equipmentName || "").trim(),
-      type: String(asset.type || "").trim()
-    }))
-    .filter(asset => asset.equipmentNo);
+  const snapshot = await MTCFixedAssetCatalogCache.loadCatalog({
+    forceRefresh,
+    fallbackRecords: fixedAssetCatalog,
+    fallbackUpdatedAt: legacyFixedAssetCatalogTimestamp
+  });
+  fixedAssetCatalog = snapshot.records.map(asset => ({
+    equipmentNo: String(asset.equipmentNo || "").trim(),
+    equipmentName: String(asset.equipmentName || "").trim(),
+    type: String(asset.type || "").trim(),
+    serialNo: String(asset.serialNo || "").trim()
+  })).filter(asset => asset.equipmentNo);
+  legacyFixedAssetCatalogTimestamp = 0;
   saveLocalSnapshot();
+  if (snapshot.error) throw new Error(snapshot.error);
 }
 
 function saveLocalSnapshot() {
@@ -211,8 +184,7 @@ function saveLocalSnapshot() {
       ts: Date.now(),
       columns: backlogColumns,
       records: allRecords,
-      dropdowns: dropdownLists,
-      assets: fixedAssetCatalog
+      dropdowns: dropdownLists
     }));
   } catch (error) {
     console.warn("Gagal menyimpan cache Backlog ke localStorage.", error);
@@ -232,6 +204,7 @@ function restoreLocalSnapshot() {
     allRecords = snapshot.records;
     dropdownLists = snapshot.dropdowns && typeof snapshot.dropdowns === "object" ? snapshot.dropdowns : {};
     fixedAssetCatalog = Array.isArray(snapshot.assets) ? snapshot.assets : [];
+    legacyFixedAssetCatalogTimestamp = Number(snapshot.ts) || 0;
     populateFilterOptions();
     applyFilters();
     return true;
@@ -774,7 +747,7 @@ function showBacklogAssetPopup(input) {
 
   const query = input.value.trim().toLowerCase();
   const matches = fixedAssetCatalog.filter(asset =>
-    [asset.equipmentNo, asset.equipmentName, asset.type]
+    [asset.equipmentNo, asset.equipmentName, asset.type, asset.serialNo]
       .some(value => String(value || "").toLowerCase().includes(query))
   ).slice(0, 40);
   popup._matches = matches;
@@ -788,7 +761,7 @@ function showBacklogAssetPopup(input) {
       <button type="button" class="backlog-asset-option" onmousedown="selectBacklogAssetFromPopup(${index});return false">
         <strong>${escapeHtml(asset.equipmentNo)}</strong>
         <span>${escapeHtml(asset.equipmentName || "-")}</span>
-        <small>${escapeHtml(asset.type || "-")}</small>
+        <small>${escapeHtml([asset.type, asset.serialNo].filter(Boolean).join(" • ") || "-")}</small>
       </button>
     `).join("");
   }

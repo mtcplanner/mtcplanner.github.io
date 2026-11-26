@@ -16,6 +16,7 @@ let fixedAssetRecords = [];
 let filteredAssetRecords = [];
 let editingAssetRowIndex = null;
 let showAllAssetRows = false;
+let legacyFixedAssetUpdatedAt = 0;
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -104,23 +105,43 @@ async function callFixedAssetApi(payload) {
 }
 
 function saveFixedAssetSnapshot() {
-  try {
-    localStorage.setItem(FIXED_ASSET_CACHE_KEY, JSON.stringify({
-      savedAt: Date.now(),
-      records: fixedAssetRecords
-    }));
-  } catch (error) {
-    console.warn("Gagal menyimpan cache Fixed Asset ke localStorage.", error);
-  }
+  return MTCFixedAssetCatalogCache.saveCatalog(fixedAssetRecords).then(() => {
+    try {
+      localStorage.removeItem(FIXED_ASSET_CACHE_KEY);
+    } catch (error) {
+      console.warn("Cache lama Fixed Asset di localStorage tidak dapat dihapus.", error);
+    }
+  }).catch(error => {
+    console.warn("Gagal menyimpan cache Fixed Asset bersama.", error);
+    showToast("Data tersimpan, tetapi cache Fixed Asset browser tidak dapat diperbarui.", "info");
+  });
 }
 
-function restoreFixedAssetSnapshot() {
+async function restoreFixedAssetSnapshot() {
+  try {
+    const snapshot = await MTCFixedAssetCatalogCache.getSnapshot();
+    if (snapshot && Array.isArray(snapshot.records)) {
+      fixedAssetRecords = snapshot.records;
+      try {
+        localStorage.removeItem(FIXED_ASSET_CACHE_KEY);
+      } catch (error) {
+        console.warn("Cache lama Fixed Asset di localStorage tidak dapat dihapus.", error);
+      }
+      updateTypeFilter();
+      applyAssetFilters();
+      return true;
+    }
+  } catch (error) {
+    console.warn("Cache bersama Fixed Asset tidak dapat dibaca.", error);
+  }
+
   try {
     const raw = localStorage.getItem(FIXED_ASSET_CACHE_KEY);
     if (!raw) return false;
     const snapshot = JSON.parse(raw);
     if (!snapshot || !Array.isArray(snapshot.records)) return false;
     fixedAssetRecords = snapshot.records;
+    legacyFixedAssetUpdatedAt = Number(snapshot.savedAt) || 0;
     updateTypeFilter();
     applyAssetFilters();
     return true;
@@ -143,16 +164,27 @@ async function loadFixedAssets(forceRefresh = false, silentBackground = false) {
   if (silentBackground) setSyncStatus("Menyinkronkan data terbaru...");
 
   try {
-    const response = await callFixedAssetApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
-    if (!Array.isArray(response.records)) {
-      throw new Error("Respons GAS tidak menyertakan daftar aset.");
-    }
-    fixedAssetRecords = response.records;
+    const snapshot = await MTCFixedAssetCatalogCache.loadCatalog({
+      forceRefresh: Boolean(forceRefresh),
+      fallbackRecords: fixedAssetRecords,
+      fallbackUpdatedAt: legacyFixedAssetUpdatedAt
+    });
+    fixedAssetRecords = snapshot.records;
+    legacyFixedAssetUpdatedAt = 0;
     updateTypeFilter();
     applyAssetFilters();
-    saveFixedAssetSnapshot();
-    setSyncStatus(`${fixedAssetRecords.length} aset • data tersinkron`);
-    if (!silentBackground || forceRefresh) showToast("Data Fixed Asset berhasil diperbarui.", "success");
+    try {
+      localStorage.removeItem(FIXED_ASSET_CACHE_KEY);
+    } catch (error) {
+      console.warn("Cache lama Fixed Asset di localStorage tidak dapat dihapus.", error);
+    }
+    if (snapshot.error) {
+      setSyncStatus(`${fixedAssetRecords.length} aset • cache lokal`);
+      showToast(`Cache tetap ditampilkan, tetapi sinkronisasi gagal: ${snapshot.error}`, "error", "Sinkronisasi Gagal");
+    } else {
+      setSyncStatus(`${fixedAssetRecords.length} aset • data tersinkron`);
+      if (!silentBackground || forceRefresh) showToast("Data Fixed Asset berhasil diperbarui.", "success");
+    }
   } catch (error) {
     if (silentBackground) {
       setSyncStatus(`${fixedAssetRecords.length} aset • cache lokal`);
@@ -220,6 +252,7 @@ function renderFixedAssetTable() {
 
 function renderAssetRow(record, index) {
   const rowIndex = Number(record.rowIndex);
+  const canEdit = Number.isInteger(rowIndex) && rowIndex >= 2;
   return `
     <tr data-row-index="${rowIndex}">
       <td>${index + 1}</td>
@@ -232,10 +265,10 @@ function renderAssetRow(record, index) {
       <td>${escapeHtml(formatDisplayDate(record.lastOverhaulDate))}</td>
       <td class="fixedasset-actions-cell">
         <div class="fixedasset-row-actions">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="startEditAsset(${rowIndex})" title="Edit langsung di tabel">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="startEditAsset(${rowIndex})" title="Edit langsung di tabel" ${canEdit ? "" : "disabled"}>
             <i class="bi bi-pencil-square"></i> Edit
           </button>
-          <button type="button" class="btn btn-danger btn-sm" onclick="deleteFixedAsset(${rowIndex})" title="Hapus aset">
+          <button type="button" class="btn btn-danger btn-sm" onclick="deleteFixedAsset(${rowIndex})" title="Hapus aset" ${canEdit ? "" : "disabled"}>
             <i class="bi bi-trash"></i>
           </button>
         </div>
@@ -279,6 +312,10 @@ function showAllAssets() {
 }
 
 function startEditAsset(rowIndex) {
+  if (!Number.isInteger(Number(rowIndex)) || Number(rowIndex) < 2) {
+    showToast("Data cache belum memiliki nomor baris untuk diedit.", "error", "Data Aset Belum Lengkap");
+    return;
+  }
   editingAssetRowIndex = Number(rowIndex);
   renderFixedAssetTable();
 }
@@ -328,7 +365,7 @@ async function saveInlineAssetEdit(rowIndex) {
     editingAssetRowIndex = null;
     updateTypeFilter();
     applyAssetFilters();
-    saveFixedAssetSnapshot();
+    await saveFixedAssetSnapshot();
     setSyncStatus(`${fixedAssetRecords.length} aset • data tersinkron`);
     showToast("Perubahan aset berhasil disimpan.", "success");
   } catch (error) {
@@ -367,7 +404,7 @@ async function submitCreateAsset(event) {
     document.getElementById("filterSearch").value = "";
     updateTypeFilter();
     applyAssetFilters();
-    saveFixedAssetSnapshot();
+    await saveFixedAssetSnapshot();
     setSyncStatus(`${fixedAssetRecords.length} aset • data tersinkron`);
     showToast("Fixed Asset baru berhasil ditambahkan.", "success");
   } catch (error) {
@@ -399,7 +436,7 @@ async function deleteFixedAsset(rowIndex) {
     editingAssetRowIndex = null;
     updateTypeFilter();
     applyAssetFilters();
-    saveFixedAssetSnapshot();
+    await saveFixedAssetSnapshot();
     setSyncStatus(`${fixedAssetRecords.length} aset • data tersinkron`);
     showToast("Fixed Asset berhasil dihapus.", "success");
   } catch (error) {
@@ -477,10 +514,10 @@ function saveApiConfig() {
   loadFixedAssets(true);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   applyDeveloperAccess();
   document.getElementById("filterType").addEventListener("change", applyAssetFilters);
   document.getElementById("filterSearch").addEventListener("input", applyAssetFilters);
-  const hasCache = restoreFixedAssetSnapshot();
+  const hasCache = await restoreFixedAssetSnapshot();
   loadFixedAssets(false, hasCache);
 });

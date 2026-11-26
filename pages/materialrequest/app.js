@@ -20,6 +20,8 @@ let activeSuggestContext = null; // { inputEl, onSelect }
 let activeAssetSuggestContext = null; // { inputEl, onSelect }
 let showAllRowsOverride = false;
 let filterDebounceTimer = null;
+let legacyMaterialCatalogTimestamp = 0;
+let legacyFixedAssetCatalogTimestamp = 0;
 
 function getGasUrl() {
   const saved = (localStorage.getItem(STORAGE_KEY_API) || "").trim();
@@ -222,8 +224,6 @@ function saveLocalSnapshot() {
       columns: entryColumns,
       records: cleanRecords,
       dropdowns: dropdownLists,
-      materials: materialCatalog,
-      assets: fixedAssetCatalog,
       approvers: activeApprovers
     };
     localStorage.setItem(STORAGE_KEY_SNAPSHOT, JSON.stringify(snap));
@@ -241,7 +241,9 @@ function restoreLocalSnapshot() {
     allRecords = prepareRecordsSearchIndex(snap.records);
     dropdownLists = snap.dropdowns || {};
     materialCatalog = Array.isArray(snap.materials) ? snap.materials : [];
+    legacyMaterialCatalogTimestamp = Number(snap.ts) || 0;
     fixedAssetCatalog = Array.isArray(snap.assets) ? snap.assets : [];
+    legacyFixedAssetCatalogTimestamp = Number(snap.ts) || 0;
     activeApprovers = Array.isArray(snap.approvers) ? snap.approvers : [];
 
     populateAllDropdowns();
@@ -252,11 +254,72 @@ function restoreLocalSnapshot() {
   }
 }
 
+function toMaterialRequestCatalog(records) {
+  return records.map(record => ({
+    code: String(record.code || record.bmc || "").trim(),
+    partNo: String(record.partNo || "").trim(),
+    itemName: String(record.itemName || "").trim(),
+    itemSize: String(record.itemSize || "").trim(),
+    unit: String(record.unit || "").trim()
+  })).filter(record => record.code || record.itemName);
+}
+
+async function syncSharedMaterialCatalog(forceRefresh = false, fallbackRecords = []) {
+  const snapshot = await MTCMaterialCatalogCache.loadCatalog({
+    forceRefresh,
+    fallbackRecords,
+    fallbackUpdatedAt: legacyMaterialCatalogTimestamp
+  });
+  materialCatalog = toMaterialRequestCatalog(snapshot.records);
+  if (snapshot.error) {
+    showToast(`Cache Material Code ditampilkan, tetapi sinkronisasi gagal: ${snapshot.error}`, "error", "Sinkronisasi Gagal");
+  }
+  return snapshot;
+}
+
+function toMaterialRequestAssetCatalog(records) {
+  return records.map(asset => ({
+    equipmentNo: String(asset.equipmentNo || "").trim(),
+    equipmentName: String(asset.equipmentName || "").trim(),
+    type: String(asset.type || "").trim(),
+    serialNo: String(asset.serialNo || "").trim()
+  })).filter(asset => asset.equipmentNo);
+}
+
+async function syncSharedFixedAssetCatalog(forceRefresh = false, fallbackRecords = []) {
+  const snapshot = await MTCFixedAssetCatalogCache.loadCatalog({
+    forceRefresh,
+    fallbackRecords,
+    fallbackUpdatedAt: legacyFixedAssetCatalogTimestamp
+  });
+  fixedAssetCatalog = toMaterialRequestAssetCatalog(snapshot.records);
+  if (snapshot.error) {
+    showToast(`Cache Fixed Asset ditampilkan, tetapi sinkronisasi gagal: ${snapshot.error}`, "error", "Sinkronisasi Gagal");
+  }
+  return snapshot;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   applyDeveloperAccess();
 
   // 1. Render instan dari cache lokal jika tersedia, lalu sinkron di background
   const hasCached = restoreLocalSnapshot();
+  const legacyCatalog = materialCatalog;
+  const legacyAssets = fixedAssetCatalog;
+  syncSharedMaterialCatalog(false, legacyCatalog).then(() => {
+    if (legacyCatalog.length) saveLocalSnapshot();
+  }).catch(error => {
+    console.warn("Cache bersama MaterialCode belum tersedia.", error);
+    if (legacyCatalog.length) materialCatalog = legacyCatalog;
+    showToast(error.message, "error", "Sinkronisasi Material Code Gagal");
+  });
+  syncSharedFixedAssetCatalog(false, legacyAssets).then(() => {
+    if (legacyAssets.length) saveLocalSnapshot();
+  }).catch(error => {
+    console.warn("Cache bersama Fixed Asset belum tersedia.", error);
+    if (legacyAssets.length) fixedAssetCatalog = legacyAssets;
+    showToast(error.message, "error", "Sinkronisasi Fixed Asset Gagal");
+  });
   loadData(false, hasCached);
 
   // 2. Pasang debounce 200ms pada input search agar ketikan tidak lagging
@@ -289,6 +352,14 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function loadData(forceRefresh = false, silentBackground = false) {
+  if (forceRefresh) {
+    syncSharedMaterialCatalog(true).catch(error => {
+      showToast(error.message, "error", "Sinkronisasi Material Code Gagal");
+    });
+    syncSharedFixedAssetCatalog(true).catch(error => {
+      showToast(error.message, "error", "Sinkronisasi Fixed Asset Gagal");
+    });
+  }
   try {
     if (!silentBackground) {
       document.getElementById("entryTableBody").innerHTML =
@@ -301,8 +372,18 @@ async function loadData(forceRefresh = false, silentBackground = false) {
     entryColumns = Array.isArray(res.columns) ? res.columns : [];
     allRecords = prepareRecordsSearchIndex(Array.isArray(res.records) ? res.records : []);
     if (res.dropdowns) dropdownLists = res.dropdowns;
-    if (Array.isArray(res.materials)) materialCatalog = res.materials;
-    if (Array.isArray(res.assets)) fixedAssetCatalog = res.assets;
+    if (!materialCatalog.length && Array.isArray(res.materials) && res.materials.length) {
+      materialCatalog = toMaterialRequestCatalog(res.materials);
+      MTCMaterialCatalogCache.seedCatalog(res.materials).catch(error => {
+        console.warn("Katalog fallback tidak dapat disimpan ke cache bersama.", error);
+      });
+    }
+    if (!fixedAssetCatalog.length && Array.isArray(res.assets) && res.assets.length) {
+      fixedAssetCatalog = toMaterialRequestAssetCatalog(res.assets);
+      MTCFixedAssetCatalogCache.seedCatalog(res.assets).catch(error => {
+        console.warn("Katalog Fixed Asset fallback tidak dapat disimpan ke cache bersama.", error);
+      });
+    }
     if (Array.isArray(res.approvers)) activeApprovers = res.approvers;
 
     saveLocalSnapshot();

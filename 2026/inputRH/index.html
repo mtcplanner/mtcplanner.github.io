@@ -29,7 +29,7 @@
       <button type="button" class="btn btn-ghost dev-only-control" id="btnApiConfig" style="display:none;" onclick="openApiConfigModal()" title="Pengaturan URL Web App GAS (Developer)">
         <i class="bi bi-link-45deg"></i> API URL
       </button>
-      <button type="button" class="btn btn-ghost" onclick="loadSheetData()">
+      <button type="button" class="btn btn-ghost" onclick="refreshInputRhData()">
         <i class="bi bi-arrow-clockwise"></i> Refresh
       </button>
       <button type="button" class="btn btn-success" onclick="openAddEqModal()">
@@ -58,7 +58,7 @@
       </div>
       <div class="filter-item">
         <label>Cari Unit</label>
-        <input type="text" id="searchUnit" class="ctrl-input" placeholder="Nama / C/N / S/N..." oninput="onFilterChange()" />
+        <input type="text" id="searchUnit" class="ctrl-input" placeholder="Nama / Equipment No / Serial No..." oninput="onFilterChange()" />
       </div>
     </div>
 
@@ -140,24 +140,24 @@
         <button type="button" class="modal-close" onclick="closeAddEqModal()">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="form-field">
-          <label>Equipment Name *</label>
-          <input type="text" id="newEqName" placeholder="Contoh: Engine MP 2" />
-        </div>
         <div class="grid-2">
           <div class="form-field">
-            <label>C/N</label>
-            <input type="text" id="newEqCn" placeholder="082003514" />
+            <label>Equipment No *</label>
+            <input type="text" id="newEqEquipmentNo" class="new-equipment-asset-input" placeholder="Ketik Equipment No..." autocomplete="off" />
           </div>
           <div class="form-field">
-            <label>S/N</label>
-            <input type="text" id="newEqSn" placeholder="67Z00767" />
+            <label>Serial No</label>
+            <input type="text" id="newEqSerialNo" class="new-equipment-asset-input" placeholder="Ketik Serial No..." autocomplete="off" />
           </div>
+        </div>
+        <div class="form-field">
+          <label>Equipment Name *</label>
+          <input type="text" id="newEqName" class="new-equipment-asset-input" placeholder="Ketik Equipment Name..." autocomplete="off" />
         </div>
         <div class="grid-2">
           <div class="form-field">
             <label>TYPE</label>
-            <input type="text" id="newEqType" placeholder="CAT-3512" />
+            <input type="text" id="newEqType" placeholder="Terisi dari Fixed Asset" readonly />
           </div>
           <div class="form-field">
             <label>RIG</label>
@@ -202,6 +202,7 @@
     </div>
   </div>
 
+  <script src="../../shared/materialcode-cache.js"></script>
   <script src="app.js"></script>
   <script>
     // ============================================================

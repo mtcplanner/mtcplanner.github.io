@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Filter Cross Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="../../pages/materialrequest/style.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <header class="mr-header">
+    <div class="mr-brand">
+      <span class="mr-pill">FILTER CROSS REFERENCE</span>
+      <span class="mr-meta" id="syncStatus">• Memuat data katalog...</span>
+    </div>
+    <div class="mr-actions">
+      <button type="button" class="btn btn-ghost" onclick="openApiConfig()">
+        <i class="bi bi-link-45deg"></i> API URL
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="loadData(true)">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button type="button" class="btn btn-primary" onclick="exportToExcel()">
+        <i class="bi bi-file-earmark-excel"></i> Export .xlsx
+      </button>
+    </div>
+  </header>
+
+  <section class="mr-toolbar crossref-toolbar">
+    <div class="kpi-row">
+      <div class="kpi-chip">
+        <span class="k-lbl">Total Referensi</span>
+        <span class="k-num" id="totalCount">0</span>
+      </div>
+      <div class="kpi-chip kpi-ok">
+        <span class="k-lbl">Hasil Filter</span>
+        <span class="k-num" id="filteredCount">0</span>
+      </div>
+    </div>
+    <div class="filter-row">
+      <select id="filterType" class="ctrl-select" aria-label="Filter Type">
+        <option value="ALL">Semua Type</option>
+      </select>
+      <input id="filterSearch" class="ctrl-input" type="search"
+        placeholder="Cari Type, item, deskripsi, BMC atau Part No..."
+        autocomplete="off" />
+    </div>
+  </section>
+
+  <main class="crossref-panel">
+    <div class="panel-head">
+      <span><i class="bi bi-funnel"></i> Daftar Persamaan Filter</span>
+      <span class="badge-count" id="resultMeta">0 data</span>
+    </div>
+    <div class="crossref-table-scroll">
+      <table class="mr-table crossref-table">
+        <thead>
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">Type</th>
+            <th rowspan="2">Nama Item</th>
+            <th rowspan="2">Description on System</th>
+            <th colspan="2">EOM</th>
+            <th colspan="2">Donaldson</th>
+            <th colspan="2">Baldwin</th>
+            <th colspan="2">Wechai</th>
+            <th colspan="2">Sakura</th>
+            <th colspan="2">Detroit Filter</th>
+            <th colspan="2">Fleet Guard</th>
+            <th colspan="2">Cross-Filter</th>
+          </tr>
+          <tr>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+            <th>BMC</th><th>Part No</th>
+          </tr>
+        </thead>
+        <tbody id="crossrefTableBody">
+          <tr><td colspan="20" class="empty-box">Memuat daftar referensi...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="crossref-footer">
+      <span id="showingMeta">Menampilkan 0 data</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="btnLoadMore" onclick="showMore()" hidden>
+        Tampilkan 250 berikutnya
+      </button>
+    </div>
+  </main>
+
+  <div class="api-config-backdrop" id="apiConfigBackdrop" hidden>
+    <section class="api-config-card" role="dialog" aria-modal="true" aria-labelledby="apiConfigTitle">
+      <div class="api-config-heading">
+        <div>
+          <h2 id="apiConfigTitle">Pengaturan API FilterCrossRef</h2>
+          <p>Gunakan URL Web App GAS yang berakhiran <code>/exec</code>.</p>
+        </div>
+        <button type="button" class="api-config-close" onclick="closeApiConfig()" aria-label="Tutup">&times;</button>
+      </div>
+      <label for="apiUrlInput">URL Web App GAS</label>
+      <input id="apiUrlInput" class="ctrl-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
+      <div class="api-config-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfig()">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan URL</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

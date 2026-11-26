@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Material Code</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="../../pages/materialrequest/style.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <header class="mr-header">
+    <div class="mr-brand">
+      <span class="mr-pill">MATERIAL CODE</span>
+      <span class="mr-meta" id="syncStatus">• Memuat katalog...</span>
+    </div>
+    <div class="mr-actions">
+      <button type="button" class="btn btn-ghost" onclick="openApiConfig()">
+        <i class="bi bi-link-45deg"></i> API URL
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="loadData(true)">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="exportToExcel()">
+        <i class="bi bi-file-earmark-excel"></i> Export .xlsx
+      </button>
+      <button type="button" class="btn btn-primary" onclick="toggleCreateForm()">
+        <i class="bi bi-plus-lg"></i> Tambah Material Code
+      </button>
+    </div>
+  </header>
+
+  <section class="mr-toolbar material-toolbar">
+    <div class="kpi-row">
+      <div class="kpi-chip">
+        <span class="k-lbl">Total Material Code</span>
+        <span class="k-num" id="totalCount">0</span>
+      </div>
+      <div class="kpi-chip kpi-ok">
+        <span class="k-lbl">Hasil Filter</span>
+        <span class="k-num" id="filteredCount">0</span>
+      </div>
+    </div>
+    <div class="filter-row">
+      <select id="filterUnit" class="ctrl-select" aria-label="Filter Unit">
+        <option value="ALL">Semua Unit</option>
+      </select>
+      <input id="filterSearch" class="ctrl-input" type="search"
+        placeholder="Cari Material Code, Part No, item atau size..."
+        autocomplete="off" />
+    </div>
+  </section>
+
+  <section class="create-panel" id="createPanel" hidden>
+    <div class="create-panel-heading">
+      <div>
+        <strong><i class="bi bi-plus-square"></i> Tambah Material Code</strong>
+        <span>Isi informasi item; Material Code harus unik.</span>
+      </div>
+      <button type="button" class="api-config-close" onclick="toggleCreateForm(false)" aria-label="Tutup">&times;</button>
+    </div>
+    <form id="createForm" class="material-form">
+      <label>Material Code / BMC *<input name="bmc" type="text" required autocomplete="off" /></label>
+      <label>Part No<input name="partNo" type="text" autocomplete="off" /></label>
+      <label class="form-wide">Item Name *<input name="itemName" type="text" required autocomplete="off" /></label>
+      <label>Item Size<input name="itemSize" type="text" autocomplete="off" /></label>
+      <label>Unit<input name="unit" type="text" autocomplete="off" /></label>
+      <label>Price<input name="price" type="text" inputmode="numeric" autocomplete="off" /></label>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" onclick="toggleCreateForm(false)">Batal</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check2"></i> Simpan</button>
+      </div>
+    </form>
+  </section>
+
+  <main class="material-panel">
+    <div class="panel-head">
+      <span><i class="bi bi-database"></i> Database Material Code</span>
+      <span class="badge-count" id="resultMeta">0 data</span>
+    </div>
+    <div class="material-table-scroll">
+      <table class="mr-table material-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Material Code / BMC</th>
+            <th>Part No</th>
+            <th>Item Name</th>
+            <th>Item Size</th>
+            <th>Unit</th>
+            <th>Price</th>
+            <th class="actions-heading">Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="materialTableBody">
+          <tr><td colspan="8" class="empty-box">Memuat katalog Material Code...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="material-footer">
+      <span id="showingMeta">Menampilkan 0 data</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="btnLoadMore" onclick="showMore()" hidden>
+        Tampilkan 250 berikutnya
+      </button>
+    </div>
+  </main>
+
+  <div class="api-config-backdrop" id="apiConfigBackdrop" hidden>
+    <section class="api-config-card" role="dialog" aria-modal="true" aria-labelledby="apiConfigTitle">
+      <div class="api-config-heading">
+        <div>
+          <h2 id="apiConfigTitle">Pengaturan API MaterialCode</h2>
+          <p>Gunakan URL Web App GAS yang berakhiran <code>/exec</code>.</p>
+        </div>
+        <button type="button" class="api-config-close" onclick="closeApiConfig()" aria-label="Tutup">&times;</button>
+      </div>
+      <label for="apiUrlInput">URL Web App GAS</label>
+      <input id="apiUrlInput" class="ctrl-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
+      <div class="api-config-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfig()">Batal</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan URL</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="../../shared/materialcode-cache.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
