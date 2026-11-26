@@ -99,7 +99,10 @@ body, html { height: 100%; overflow: hidden; background: var(--bg-body); color: 
 .btn-icon:hover { background: #f1f5f9; color: var(--text-primary); }
 
 .brand-wrapper { display: flex; align-items: center; gap: 10px; }
-.top-bar-logo { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; }
+.top-bar-logo {
+  box-sizing: content-box; width: auto; height: 35px; max-width: 70px; padding: 3px;
+  border: 1px solid #cbd5e1; border-radius: 8px; background: #ffffff; object-fit: contain;
+}
 .brand-text h2 { font-size: 13.5px; font-weight: 800; color: #0f172a; line-height: 1.1; letter-spacing: -0.2px; }
 .brand-text span { font-size: 9px; font-weight: 700; color: #0284c7; letter-spacing: 0.8px; }
 
