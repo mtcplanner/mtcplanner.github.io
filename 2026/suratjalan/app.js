@@ -15,6 +15,7 @@ let allRecords = [];
 let filteredRecords = [];
 let materialCatalog = []; // [{ code, partNo, itemName, itemSize, unit }]
 let selectedNoDoc = null;
+let editingRowIndex = null;
 let currentView = "all"; // "all" | "detail"
 let hasCachedMaterialCatalog = false;
 let materialCatalogIsStale = true;
@@ -309,9 +310,10 @@ function handleItemNoInput(inputEl, isEditModal = false) {
   inputEl.value = matched.code;
 
   if (isEditModal) {
-    const itemEl = document.getElementById("editItem");
+    const form = inputEl.closest(".sj-inline-edit-panel");
+    const itemEl = form ? form.querySelector("#inlineEditItem") : document.getElementById("editItem");
     if (itemEl && matched.itemName) itemEl.value = matched.itemName;
-    const satuanEl = document.getElementById("editSatuan");
+    const satuanEl = form ? form.querySelector("#inlineEditSatuan") : document.getElementById("editSatuan");
     if (satuanEl && matched.unit) satuanEl.value = matched.unit;
   } else {
     const tr = inputEl.closest("tr");
@@ -423,7 +425,7 @@ function renderDocList() {
     const isIn = String(d.inputType).toLowerCase().includes("masuk");
     const isActive = selectedNoDoc === d.noDoc;
     return `
-      <div class="doc-card-item ${isActive ? "active" : ""}" onclick="selectDocument('${escapeHtml(d.noDoc)}')">
+      <div class="doc-card-item ${isActive ? "active" : ""}" data-no-doc="${escapeHtml(d.noDoc)}" onclick="selectDocument(this.dataset.noDoc)">
         <div class="doc-card-top">
           <span class="doc-no">${escapeHtml(d.noDoc)}</span>
           <span class="pill-type ${isIn ? "pill-in" : "pill-out"}">${escapeHtml(d.inputType)}</span>
@@ -435,12 +437,12 @@ function renderDocList() {
   }).join("");
 }
 
-function selectDocument(noDoc) {
+function selectDocument(noDoc, startEditing = false, rowIndex = null) {
   selectedNoDoc = noDoc;
-  document.getElementById("activeDocInfo").textContent = `Dokumen: ${noDoc}`;
+  editingRowIndex = startEditing && rowIndex !== null ? Number(rowIndex) : null;
   renderDocList();
-  renderDetailDocument();
   switchView("detail");
+  renderDetailDocument();
 }
 
 function switchView(mode) {
@@ -479,7 +481,9 @@ function renderRekapTable() {
 
   tbody.innerHTML = groups.map((items, idx) => {
     const r = items[0];
-    const noDocVal = String(getRecordFieldValue(r, "noDoc") || "-");
+    const rawNoDoc = String(getRecordFieldValue(r, "noDoc") || "").trim();
+    const documentKey = rawNoDoc || "(Tanpa No Doc)";
+    const noDocVal = rawNoDoc || "-";
     const cellsHtml = cols.map(c => {
       const val = getRecordFieldValue(r, c.key);
       if (itemColumnKeys.has(c.key)) {
@@ -490,11 +494,7 @@ function renderRekapTable() {
             : c.key === "qty"
               ? String(itemValue ?? "-")
               : String(itemValue || "-");
-          return `
-            <button type="button" class="record-item-line" title="Klik untuk mengedit item ini"
-              onclick="event.stopPropagation(); openEditRowModal(${itemRecord.rowIndex})"
-              onkeydown="event.stopPropagation()">${escapeHtml(text)}</button>
-          `;
+          return `<div class="record-item-line">${escapeHtml(text)}</div>`;
         }).join("");
         const classes = [
           c.key === "item" ? "td-item fw-bold" : "",
@@ -518,9 +518,10 @@ function renderRekapTable() {
     }).join("");
 
     return `
-      <tr class="clickable-row" tabindex="0" title="Klik untuk mengedit item pertama; klik nilai item untuk memilih item tertentu"
-        onclick="openEditRowModal(${r.rowIndex})"
-        onkeydown="handleRecordRowKeydown(event, ${r.rowIndex})">
+      <tr class="clickable-row" tabindex="0" data-no-doc="${escapeHtml(documentKey)}" data-row-index="${escapeHtml(String(r.rowIndex))}"
+        title="Klik untuk membuka detail dan edit dokumen"
+        onclick="selectDocument(this.dataset.noDoc, true, this.dataset.rowIndex)"
+        onkeydown="handleRecordRowKeydown(event, this.dataset.noDoc, this.dataset.rowIndex)">
         <td class="text-center">${idx + 1}</td>
         ${cellsHtml}
       </tr>
@@ -528,32 +529,97 @@ function renderRekapTable() {
   }).join("");
 }
 
-function handleRecordRowKeydown(event, rowIndex) {
+function handleRecordRowKeydown(event, noDoc, rowIndex) {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    openEditRowModal(rowIndex);
+    selectDocument(noDoc, true, rowIndex);
   }
 }
 
 function renderDetailDocument() {
   const container = document.getElementById("docDetailBody");
   if (!selectedNoDoc) {
+    document.getElementById("activeDocInfo").textContent = "Semua Dokumen";
     container.innerHTML = `<div class="empty-box">Pilih nomor dokumen di panel kiri untuk melihat rincian Surat Jalan.</div>`;
     return;
   }
 
-  const lines = allRecords.filter(r => String(getRecordFieldValue(r, "noDoc") || "").trim() === selectedNoDoc);
+  const lines = allRecords.filter(r => {
+    const noDoc = String(getRecordFieldValue(r, "noDoc") || "").trim() || "(Tanpa No Doc)";
+    return noDoc === selectedNoDoc;
+  });
   if (lines.length === 0) {
+    document.getElementById("activeDocInfo").textContent = "Dokumen tidak ditemukan";
     container.innerHTML = `<div class="empty-box">Dokumen tidak ditemukan.</div>`;
     return;
   }
 
   const head = lines[0];
+  document.getElementById("activeDocInfo").textContent = `Dokumen: ${selectedNoDoc}`;
   const inputTypeVal = String(getRecordFieldValue(head, "inputType") || getRecordFieldValue(head, "input") || "Barang Masuk");
   const isIn = inputTypeVal.toLowerCase().includes("masuk");
   const totalQty = lines.reduce((acc, cur) => acc + (Number(getRecordFieldValue(cur, "qty")) || 0), 0);
   const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
   const hasSatuanCol = sheetColumns.some(c => c.key === "satuan");
+  const editingRow = lines.find(line => Number(line.rowIndex) === Number(editingRowIndex));
+  const editForm = editingRow ? `
+    <section class="sj-inline-edit-panel">
+      <div class="sj-inline-edit-heading">
+        <div>
+          <strong>Edit Baris Surat Jalan</strong>
+          <span>Perubahan langsung di detail dokumen.</span>
+        </div>
+        <div class="sj-inline-edit-actions">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="cancelInlineEditRow()">Batal</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="saveInlineEditRow()">
+            <i class="bi bi-check2-circle"></i> Simpan Perubahan
+          </button>
+        </div>
+      </div>
+      <input type="hidden" id="inlineEditRowIndex" value="${escapeHtml(String(editingRow.rowIndex))}" />
+      <div class="sj-inline-edit-grid">
+        <label class="sj-inline-edit-field">Tanggal
+          <input type="date" id="inlineEditTanggal" value="${escapeHtml(String(getRecordFieldValue(editingRow, "tanggal") || ""))}" />
+        </label>
+        <label class="sj-inline-edit-field">No Document
+          <input type="text" id="inlineEditNoDoc" value="${escapeHtml(String(getRecordFieldValue(editingRow, "noDoc") || ""))}" />
+        </label>
+        ${hasItemNoCol ? `<label class="sj-inline-edit-field">Item No
+          <input type="text" id="inlineEditItemNo" list="materialCodeDatalist" value="${escapeHtml(String(getRecordFieldValue(editingRow, "itemNo") || ""))}"
+            placeholder="Pilih / ketik Item No..." oninput="handleItemNoInput(this, true)" onchange="handleItemNoInput(this, true)" />
+        </label>` : ""}
+        <label class="sj-inline-edit-field sj-inline-edit-wide">Nama Item / Barang
+          <textarea id="inlineEditItem" class="inp-item-textarea">${escapeHtml(String(getRecordFieldValue(editingRow, "item") || ""))}</textarea>
+        </label>
+        <label class="sj-inline-edit-field">Qty
+          <input type="number" id="inlineEditQty" min="0" step="any" value="${escapeHtml(String(getRecordFieldValue(editingRow, "qty") ?? ""))}" />
+        </label>
+        ${hasSatuanCol ? `<label class="sj-inline-edit-field">Satuan
+          <input type="text" id="inlineEditSatuan" value="${escapeHtml(String(getRecordFieldValue(editingRow, "satuan") || ""))}" />
+        </label>` : ""}
+        <label class="sj-inline-edit-field">Jenis Input
+          <select id="inlineEditInputType">
+            <option value="Barang Masuk" ${inputTypeVal.toLowerCase().includes("masuk") ? "selected" : ""}>Barang Masuk</option>
+            <option value="Barang Keluar" ${inputTypeVal.toLowerCase().includes("keluar") ? "selected" : ""}>Barang Keluar</option>
+          </select>
+        </label>
+        <label class="sj-inline-edit-field">Pengirim
+          <input type="text" id="inlineEditPengirim" value="${escapeHtml(String(getRecordFieldValue(editingRow, "pengirim") || ""))}" />
+        </label>
+        <label class="sj-inline-edit-field">Tujuan
+          <input type="text" id="inlineEditTujuan" value="${escapeHtml(String(getRecordFieldValue(editingRow, "tujuan") || ""))}" />
+        </label>
+        <label class="sj-inline-edit-field sj-inline-edit-wide">Keterangan
+          <input type="text" id="inlineEditKeterangan" value="${escapeHtml(String(getRecordFieldValue(editingRow, "keterangan") || ""))}" />
+        </label>
+        <div class="sj-inline-edit-delete">
+          <button type="button" class="btn btn-danger btn-sm" onclick="confirmDeleteRow(Number(document.getElementById('inlineEditRowIndex').value))">
+            <i class="bi bi-trash3"></i> Hapus Baris
+          </button>
+        </div>
+      </div>
+    </section>
+  ` : "";
 
   container.innerHTML = `
     <div class="doc-summary-box">
@@ -577,6 +643,8 @@ function renderDetailDocument() {
       <div class="meta-item"><span>Total Item / Qty</span><strong>${lines.length} Item (${totalQty} Qty)</strong></div>
     </div>
 
+    ${editForm}
+
     <table class="sj-table">
       <thead>
         <tr>
@@ -586,19 +654,25 @@ function renderDetailDocument() {
           <th style="width:80px;">Qty</th>
           ${hasSatuanCol ? `<th style="width:85px;">Satuan</th>` : ""}
           <th>Keterangan</th>
+          <th style="width:85px;">Aksi</th>
         </tr>
       </thead>
       <tbody>
         ${lines.map((ln, idx) => `
-          <tr class="clickable-row" tabindex="0" title="Klik untuk melihat atau mengedit data"
-            onclick="openEditRowModal(${ln.rowIndex})"
-            onkeydown="handleRecordRowKeydown(event, ${ln.rowIndex})">
+          <tr>
             <td class="text-center">${idx + 1}</td>
             ${hasItemNoCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "itemNo") || ""))}</td>` : ""}
             <td class="fw-bold td-item">${escapeHtml(String(getRecordFieldValue(ln, "item") || ""))}</td>
             <td class="text-center fw-bold">${Number(getRecordFieldValue(ln, "qty")) || 0}</td>
             ${hasSatuanCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "satuan") || ""))}</td>` : ""}
             <td>${escapeHtml(String(getRecordFieldValue(ln, "keterangan") || ""))}</td>
+            <td class="text-center">
+              ${editingRow && Number(editingRow.rowIndex) === Number(ln.rowIndex)
+                ? `<span class="text-muted">Sedang diedit</span>`
+                : `<button type="button" class="btn btn-ghost btn-sm" onclick="startInlineEditRow(${Number(ln.rowIndex)})" title="Edit langsung di detail">
+                    <i class="bi bi-pencil-square"></i> Edit
+                  </button>`}
+            </td>
           </tr>
         `).join("")}
       </tbody>
@@ -715,6 +789,7 @@ async function submitCreateDocument() {
       renderMaterialDatalist();
     }
     selectedNoDoc = noDoc;
+    editingRowIndex = null;
     applyFilters();
     saveLocalSnapshot();
     showToast(`Surat Jalan ${noDoc} (${items.length} item) berhasil disimpan.`, "success");
@@ -726,56 +801,49 @@ async function submitCreateDocument() {
 // ============================================================
 // EDIT & DELETE BARIS / DOKUMEN
 // ============================================================
-function openEditRowModal(rowIndex) {
-  const row = allRecords.find(r => r.rowIndex === rowIndex);
+function startInlineEditRow(rowIndex) {
+  const row = allRecords.find(record => Number(record.rowIndex) === Number(rowIndex));
   if (!row) return;
+  selectedNoDoc = String(getRecordFieldValue(row, "noDoc") || "").trim() || "(Tanpa No Doc)";
+  editingRowIndex = Number(row.rowIndex);
+  renderDocList();
+  renderDetailDocument();
+}
 
-  document.getElementById("editRowIndex").value = row.rowIndex;
-  document.getElementById("editTanggal").value = getRecordFieldValue(row, "tanggal");
-  document.getElementById("editNoDoc").value = getRecordFieldValue(row, "noDoc");
+function cancelInlineEditRow() {
+  editingRowIndex = null;
+  renderDetailDocument();
+}
 
-  const itemNoEl = document.getElementById("editItemNo");
-  const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
-  if (itemNoEl) {
-    document.getElementById("editItemNoWrap").style.display = hasItemNoCol ? "" : "none";
-    itemNoEl.value = getRecordFieldValue(row, "itemNo") || "";
+async function saveInlineEditRow() {
+  const rowIndex = Number(document.getElementById("inlineEditRowIndex").value);
+  const existing = allRecords.find(record => Number(record.rowIndex) === rowIndex);
+  if (!existing) return showToast("Baris yang akan diedit tidak ditemukan. Muat ulang data.", "error");
+
+  const hasItemNoCol = sheetColumns.some(column => column.key === "itemNo");
+  const hasSatuanCol = sheetColumns.some(column => column.key === "satuan");
+  const changes = {
+    tanggal: document.getElementById("inlineEditTanggal").value,
+    noDoc: document.getElementById("inlineEditNoDoc").value.trim(),
+    itemNo: hasItemNoCol ? document.getElementById("inlineEditItemNo").value.trim() : getRecordFieldValue(existing, "itemNo"),
+    item: document.getElementById("inlineEditItem").value.trim(),
+    qty: Number(document.getElementById("inlineEditQty").value) || 0,
+    satuan: hasSatuanCol ? document.getElementById("inlineEditSatuan").value.trim() : getRecordFieldValue(existing, "satuan"),
+    inputType: document.getElementById("inlineEditInputType").value,
+    pengirim: document.getElementById("inlineEditPengirim").value.trim(),
+    tujuan: document.getElementById("inlineEditTujuan").value.trim(),
+    keterangan: document.getElementById("inlineEditKeterangan").value.trim()
+  };
+  if (!changes.tanggal || !changes.noDoc) {
+    return showToast("Tanggal dan No Document wajib diisi.", "error");
   }
 
-  document.getElementById("editItem").value = getRecordFieldValue(row, "item");
-  document.getElementById("editQty").value = getRecordFieldValue(row, "qty");
-  document.getElementById("editSatuan").value = getRecordFieldValue(row, "satuan") || "";
-  document.getElementById("editInputType").value = getRecordFieldValue(row, "inputType") || getRecordFieldValue(row, "input") || "Barang Masuk";
-  document.getElementById("editPengirim").value = getRecordFieldValue(row, "pengirim");
-  document.getElementById("editTujuan").value = getRecordFieldValue(row, "tujuan");
-  document.getElementById("editKeterangan").value = getRecordFieldValue(row, "keterangan");
-  document.getElementById("editRowModal").classList.add("active");
-}
-
-function closeEditRowModal() {
-  document.getElementById("editRowModal").classList.remove("active");
-}
-
-async function submitEditRow() {
-  const itemNoEl = document.getElementById("editItemNo");
-  const itemNoVal = itemNoEl ? itemNoEl.value.trim() : "";
-  const satuanVal = document.getElementById("editSatuan").value.trim();
-
   const row = {
-    rowIndex: Number(document.getElementById("editRowIndex").value),
-    tanggal: document.getElementById("editTanggal").value,
-    noDoc: document.getElementById("editNoDoc").value.trim(),
-    itemNo: itemNoVal,
-    item: document.getElementById("editItem").value.trim(),
-    qty: Number(document.getElementById("editQty").value) || 0,
-    satuan: satuanVal,
-    inputType: document.getElementById("editInputType").value,
-    pengirim: document.getElementById("editPengirim").value.trim(),
-    tujuan: document.getElementById("editTujuan").value.trim(),
-    keterangan: document.getElementById("editKeterangan").value.trim(),
-    fields: { itemNo: itemNoVal, satuan: satuanVal }
+    ...existing,
+    ...changes,
+    rowIndex,
+    fields: { ...(existing.fields || {}), ...changes }
   };
-
-  closeEditRowModal();
   Swal.fire({ title: "Memperbarui Data...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
   try {
@@ -783,6 +851,8 @@ async function submitEditRow() {
     Swal.close();
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : sheetColumns;
     allRecords = res.records || [];
+    selectedNoDoc = changes.noDoc;
+    editingRowIndex = null;
     applyFilters();
     saveLocalSnapshot();
     showToast("Baris Surat Jalan berhasil diperbarui.", "success");
@@ -791,7 +861,7 @@ async function submitEditRow() {
   }
 }
 
-function confirmDeleteRow(rowIndex, closeModalOnSuccess = false) {
+function confirmDeleteRow(rowIndex) {
   Swal.fire({
     title: "Hapus Baris?",
     text: "Data baris ini akan dihapus permanen dari sheet Data.",
@@ -805,7 +875,7 @@ function confirmDeleteRow(rowIndex, closeModalOnSuccess = false) {
     try {
       const res = await callGasApi({ action: "deleteRow", rowIndex });
       Swal.close();
-      if (closeModalOnSuccess) closeEditRowModal();
+      editingRowIndex = null;
       allRecords = res.records || [];
       applyFilters();
       saveLocalSnapshot();
@@ -832,6 +902,7 @@ function confirmDeleteDocument(noDoc) {
       Swal.close();
       allRecords = res.records || [];
       selectedNoDoc = null;
+      editingRowIndex = null;
       applyFilters();
       saveLocalSnapshot();
       switchView("all");
