@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTC Planner — Backlog</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" />
+  <link rel="stylesheet" href="../materialrequest/style.css" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <header class="mr-header">
+    <div class="mr-brand">
+      <span class="mr-pill">BACKLOG</span>
+      <span class="mr-meta" id="backlogSummaryMeta">• Equipment Action Tracker</span>
+    </div>
+    <div class="mr-actions">
+      <button type="button" class="btn btn-ghost" id="btnApiConfig" style="display:none;" onclick="openApiConfigModal()">
+        <i class="bi bi-link-45deg"></i> API URL
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="loadData(true)" title="Muat ulang data Backlog">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="exportToExcel()">
+        <i class="bi bi-file-earmark-excel"></i> Export .xlsx
+      </button>
+      <button type="button" class="btn btn-ghost" onclick="window.print()">
+        <i class="bi bi-printer"></i> Print
+      </button>
+      <button type="button" class="btn btn-primary" onclick="openBacklogModal()">
+        <i class="bi bi-plus-lg"></i> Tambah Backlog
+      </button>
+    </div>
+  </header>
+
+  <section class="mr-toolbar backlog-toolbar">
+    <div class="kpi-row">
+      <div class="kpi-chip"><span class="k-lbl">Total Backlog</span><span class="k-num" id="kpiTotal">0</span></div>
+      <div class="kpi-chip kpi-warn"><span class="k-lbl">Open</span><span class="k-num" id="kpiOpen">0</span></div>
+      <div class="kpi-chip"><span class="k-lbl">Scheduled</span><span class="k-num" id="kpiScheduled">0</span></div>
+      <div class="kpi-chip kpi-ok"><span class="k-lbl">Finish</span><span class="k-num" id="kpiFinish">0</span></div>
+      <div class="kpi-chip kpi-danger"><span class="k-lbl">P3 / Urgent</span><span class="k-num" id="kpiUrgent">0</span></div>
+    </div>
+    <div class="filter-row">
+      <select id="filterEvent" class="ctrl-select" aria-label="Filter event" onchange="applyFilters()">
+        <option value="ALL">Semua Event</option>
+      </select>
+      <select id="filterPriority" class="ctrl-select" aria-label="Filter priority" onchange="applyFilters()">
+        <option value="ALL">Semua Priority</option>
+      </select>
+      <select id="filterMaterialStatus" class="ctrl-select" aria-label="Filter material status" onchange="applyFilters()">
+        <option value="ALL">Semua Material Status</option>
+      </select>
+      <select id="filterStatus" class="ctrl-select" aria-label="Filter status" onchange="applyFilters()">
+        <option value="ALL">Semua Status</option>
+      </select>
+      <input type="text" id="filterSearch" class="ctrl-input backlog-search" placeholder="Cari equipment / anomaly / document..." />
+    </div>
+  </section>
+
+  <main class="mr-workbench backlog-workbench">
+    <aside class="mr-list-panel">
+      <div class="panel-head">
+        <span><i class="bi bi-list-task"></i> Daftar Backlog</span>
+        <span class="badge-count" id="backlogListCount">0</span>
+      </div>
+      <div class="mr-list-scroll" id="backlogListContainer">
+        <div class="empty-box">Memuat daftar Backlog...</div>
+      </div>
+    </aside>
+
+    <section class="mr-detail-panel">
+      <div class="panel-head detail-head">
+        <div class="tab-switch">
+          <button type="button" class="tab-btn active" id="tabBtnAll" onclick="switchView('all')">
+            <i class="bi bi-table"></i> Semua Backlog
+          </button>
+          <button type="button" class="tab-btn" id="tabBtnDetail" onclick="switchView('detail')">
+            <i class="bi bi-card-text"></i> Detail Backlog
+          </button>
+        </div>
+        <div id="activeBacklogInfo" class="active-mr-label">Semua Backlog</div>
+      </div>
+
+      <div class="view-section active" id="viewAll">
+        <div class="table-scroll">
+          <table class="mr-table backlog-table">
+            <thead>
+              <tr>
+                <th>No</th><th>Date Found</th><th>Event</th><th>Equipment No</th><th>Equipment Name</th>
+                <th>Type</th><th>HM</th><th class="backlog-wrap-cell">Anomaly / WO Description</th><th class="backlog-action-cell">Action Required</th><th class="backlog-sparepart-cell">Sparepart Need</th>
+                <th>Critical / Priorities</th><th>Material Status</th><th>Document No</th><th>Status</th><th>Date Closed</th>
+              </tr>
+            </thead>
+            <tbody id="backlogTableBody">
+              <tr><td colspan="15" class="empty-box">Memuat data Backlog...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn-ghost backlog-more" id="btnShowAllRows" onclick="showAllRows()" style="display:none;">
+          Tampilkan semua baris
+        </button>
+      </div>
+
+      <div class="view-section" id="viewDetail">
+        <div class="detail-scroll" id="backlogDetailBody">
+          <div class="empty-box">Pilih Backlog di panel kiri untuk melihat detail.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="backlogModal">
+    <div class="modal-card modal-xl">
+      <div class="modal-header">
+        <h3 id="backlogModalTitle"><i class="bi bi-clipboard-plus"></i> Tambah Backlog</h3>
+        <button type="button" class="modal-close" onclick="closeBacklogModal()" aria-label="Tutup">&times;</button>
+      </div>
+      <form id="backlogForm" onsubmit="submitBacklog(event)">
+        <input type="hidden" id="backlogRowIndex" name="rowIndex" />
+        <div class="modal-body">
+          <div class="section-caption">Informasi Backlog &amp; Equipment</div>
+          <div class="form-grid-4">
+            <div class="form-field"><label for="fieldDateFound">Date Found</label><input id="fieldDateFound" name="Date Found" type="date" /></div>
+            <div class="form-field"><label for="fieldEvent">Event</label><select id="fieldEvent" name="Event"></select></div>
+            <div class="form-field"><label for="fieldEquipmentNo">Equipment No</label><input id="fieldEquipmentNo" name="Equipment No" type="text" placeholder="Pilih dari Fixed Asset..." autocomplete="off" /></div>
+            <div class="form-field"><label for="fieldEquipmentName">Equipment Name</label><input id="fieldEquipmentName" name="Equipment Name" type="text" readonly /></div>
+            <div class="form-field"><label for="fieldType">Type</label><input id="fieldType" name="Type" type="text" readonly /></div>
+            <div class="form-field"><label for="fieldHM">HM</label><input id="fieldHM" name="HM" type="number" min="0" step="any" /></div>
+            <div class="form-field"><label for="fieldPriority">Critical / Priorities</label><select id="fieldPriority" name="Critical/Priorities"></select></div>
+            <div class="form-field"><label for="fieldDuration">Est. Duration (Hours)</label><input id="fieldDuration" name="Est.Duration (Hours)" type="number" min="0" step="any" /></div>
+            <div class="form-field"><label for="fieldMaterialStatus">Material Status</label><select id="fieldMaterialStatus" name="Material Status"></select></div>
+            <div class="form-field"><label for="fieldDocumentNo">Document No</label><input id="fieldDocumentNo" name="Document No" type="text" /></div>
+            <div class="form-field"><label for="fieldStatus">Status</label><select id="fieldStatus" name="Status"></select></div>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-field"><label for="fieldAnomaly">Anomaly / WO Description</label><textarea id="fieldAnomaly" name="Anomaly/WO Description" rows="3"></textarea></div>
+            <div class="form-field"><label for="fieldAction">Action Required</label><textarea id="fieldAction" name="Action Required" rows="3"></textarea></div>
+            <div class="form-field"><label for="fieldSparepart">Sparepart Need</label><textarea id="fieldSparepart" name="Sparepart Need" rows="3"></textarea></div>
+            <div class="form-field"><label for="fieldRemarks">Remarks</label><textarea id="fieldRemarks" name="Remarks" rows="3"></textarea></div>
+          </div>
+          <div class="form-grid-2 backlog-date-fields">
+            <div class="form-field"><label for="fieldDateClosed">Date Closed</label><input id="fieldDateClosed" name="Date Closed" type="date" /></div>
+            <div class="form-field"><label for="fieldExecutionPlan">Execution Plan</label><input id="fieldExecutionPlan" name="Execution Plan" type="date" /></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeBacklogModal()">Batal</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> Simpan Backlog</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="apiConfigModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="bi bi-gear"></i> Konfigurasi Endpoint GAS</h3>
+        <button type="button" class="modal-close" onclick="closeApiConfigModal()" aria-label="Tutup">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label for="gasApiUrlInput">URL Web App Google Apps Script</label>
+          <input type="url" id="gasApiUrlInput" placeholder="https://script.google.com/macros/s/.../exec" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeApiConfigModal()">Tutup</button>
+        <button type="button" class="btn btn-primary" onclick="saveApiConfig()">Simpan &amp; Muat</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
