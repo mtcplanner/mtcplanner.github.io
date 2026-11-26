@@ -36,24 +36,26 @@
   </header>
 
   <section class="mr-toolbar crossref-toolbar">
-    <div class="kpi-row">
-      <div class="kpi-chip">
-        <span class="k-lbl">Total Referensi</span>
-        <span class="k-num" id="totalCount">0</span>
-      </div>
-      <div class="kpi-chip kpi-ok">
-        <span class="k-lbl">Hasil Filter</span>
-        <span class="k-num" id="filteredCount">0</span>
-      </div>
-    </div>
-    <div class="filter-row">
-      <select id="filterType" class="ctrl-select" aria-label="Filter Type">
-        <option value="ALL">Semua Type</option>
-      </select>
-      <input id="filterSearch" class="ctrl-input" type="search"
-        placeholder="Cari Type, item, deskripsi, BMC atau Part No..."
-        autocomplete="off" />
-    </div>
+    <form class="crossref-search" id="filterForm">
+      <label class="crossref-search-field" for="filterType">
+        <span>TYPE (ENGINE/MODEL)</span>
+        <input id="filterType" class="ctrl-input" type="search"
+          placeholder="Contoh: C15..." autocomplete="off" />
+      </label>
+      <label class="crossref-search-field" for="filterName">
+        <span>NAMA ITEM</span>
+        <input id="filterName" class="ctrl-input" type="search"
+          placeholder="Contoh: Oil Filter..." autocomplete="off" />
+      </label>
+      <label class="crossref-search-field" for="filterPartNo">
+        <span>PART NUMBER</span>
+        <input id="filterPartNo" class="ctrl-input" type="search"
+          placeholder="Ketik Part No (misal: 1R1414)..." autocomplete="off" />
+      </label>
+      <button type="submit" class="btn btn-primary crossref-search-button">
+        <i class="bi bi-search"></i> Cari
+      </button>
+    </form>
   </section>
 
   <main class="crossref-panel">
@@ -61,43 +63,13 @@
       <span><i class="bi bi-funnel"></i> Daftar Persamaan Filter</span>
       <span class="badge-count" id="resultMeta">0 data</span>
     </div>
-    <div class="crossref-table-scroll">
-      <table class="mr-table crossref-table">
-        <thead>
-          <tr>
-            <th rowspan="2">No</th>
-            <th rowspan="2">Type</th>
-            <th rowspan="2">Nama Item</th>
-            <th rowspan="2">Description on System</th>
-            <th colspan="2">EOM</th>
-            <th colspan="2">Donaldson</th>
-            <th colspan="2">Baldwin</th>
-            <th colspan="2">Wechai</th>
-            <th colspan="2">Sakura</th>
-            <th colspan="2">Detroit Filter</th>
-            <th colspan="2">Fleet Guard</th>
-            <th colspan="2">Cross-Filter</th>
-          </tr>
-          <tr>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-            <th>BMC</th><th>Part No</th>
-          </tr>
-        </thead>
-        <tbody id="crossrefTableBody">
-          <tr><td colspan="20" class="empty-box">Memuat daftar referensi...</td></tr>
-        </tbody>
-      </table>
+    <div class="crossref-results" id="crossrefResults" aria-live="polite">
+      <div class="empty-box">Memuat daftar referensi...</div>
     </div>
     <div class="crossref-footer">
       <span id="showingMeta">Menampilkan 0 data</span>
       <button type="button" class="btn btn-ghost btn-sm" id="btnLoadMore" onclick="showMore()" hidden>
-        Tampilkan 250 berikutnya
+        Tampilkan data berikutnya
       </button>
     </div>
   </main>

@@ -3,14 +3,14 @@ const FILTER_CROSSREF_API_KEY = "MTC_FILTER_CROSSREF_GAS_URL";
 const FILTER_CROSSREF_CACHE_KEY = "MTC_FILTER_CROSSREF_CACHE_V1";
 const INITIAL_RENDER_LIMIT = 250;
 const BRANDS = [
-  { key: "eom", label: "EOM" },
+  { key: "eom", label: "OEM" },
+  { key: "cross", label: "Cross-Reference" },
   { key: "donaldson", label: "Donaldson" },
   { key: "baldwin", label: "Baldwin" },
   { key: "wechai", label: "Wechai" },
   { key: "sakura", label: "Sakura" },
   { key: "detroit", label: "Detroit Filter" },
-  { key: "fleetguard", label: "Fleet Guard" },
-  { key: "cross", label: "Cross-Filter" }
+  { key: "fleetguard", label: "Fleet Guard" }
 ];
 
 let allRecords = [];
@@ -63,7 +63,6 @@ function restoreCache() {
     const snapshot = JSON.parse(localStorage.getItem(FILTER_CROSSREF_CACHE_KEY) || "null");
     if (!snapshot || !Array.isArray(snapshot.records)) return false;
     allRecords = snapshot.records;
-    updateTypeFilter();
     applyFilters();
     document.getElementById("syncStatus").textContent = "• Data lokal ditampilkan";
     return true;
@@ -119,15 +118,14 @@ async function callGasApi(payload) {
 async function loadData(forceRefresh = false) {
   const status = document.getElementById("syncStatus");
   if (!allRecords.length) {
-    document.getElementById("crossrefTableBody").innerHTML =
-      '<tr><td colspan="20" class="empty-box">Memuat daftar referensi...</td></tr>';
+    document.getElementById("crossrefResults").innerHTML =
+      '<div class="empty-box">Memuat daftar referensi...</div>';
   }
   status.textContent = "• Menyinkronkan data terbaru...";
 
   try {
     const response = await callGasApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
     allRecords = Array.isArray(response.records) ? response.records : [];
-    updateTypeFilter();
     applyFilters();
     saveCache(allRecords);
     status.textContent = `• Sinkronisasi selesai ${new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`;
@@ -135,73 +133,78 @@ async function loadData(forceRefresh = false) {
   } catch (error) {
     status.textContent = allRecords.length ? "• Menampilkan cache lokal — sinkronisasi gagal" : "• Gagal memuat data";
     if (!allRecords.length) {
-      document.getElementById("crossrefTableBody").innerHTML =
-        `<tr><td colspan="20" class="empty-box crossref-error">${escapeHtml(error.message)}</td></tr>`;
+      document.getElementById("crossrefResults").innerHTML =
+        `<div class="empty-box crossref-error">${escapeHtml(error.message)}</div>`;
     }
     showToast(error.message, "error", "Koneksi Gagal");
   }
 }
 
-function updateTypeFilter() {
-  const select = document.getElementById("filterType");
-  const previous = select.value;
-  const types = [...new Set(allRecords.map(record => String(record.type || "").trim()).filter(type => type && type !== "-"))]
-    .sort((a, b) => a.localeCompare(b, "id"));
-  select.innerHTML = '<option value="ALL">Semua Type</option>' +
-    types.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join("");
-  if (types.includes(previous)) select.value = previous;
-}
-
 function applyFilters(resetLimit = true) {
-  const term = document.getElementById("filterSearch").value.trim().toLowerCase();
-  const type = document.getElementById("filterType").value;
+  const type = document.getElementById("filterType").value.trim().toLowerCase();
+  const name = document.getElementById("filterName").value.trim().toLowerCase();
+  const partNo = document.getElementById("filterPartNo").value.trim().toLowerCase();
   filteredRecords = allRecords.filter(record => {
-    if (type !== "ALL" && String(record.type || "") !== type) return false;
-    if (!term) return true;
-    const values = [record.type, record.namaItem, record.desc];
-    BRANDS.forEach(brand => {
+    const recordType = String(record.type || "").toLowerCase();
+    const recordName = String(record.namaItem || "").toLowerCase();
+    const matchesPartNo = BRANDS.some(brand => {
       const item = record[brand.key] || {};
-      values.push(item.bmc, item.pn);
+      return String(item.pn || "").toLowerCase().includes(partNo);
     });
-    return values.some(value => String(value || "").toLowerCase().includes(term));
+    return (!type || recordType.includes(type)) &&
+      (!name || recordName.includes(name)) &&
+      (!partNo || matchesPartNo);
   });
   if (resetLimit) visibleLimit = INITIAL_RENDER_LIMIT;
-  renderTable();
+  renderResults();
 }
 
-function renderTable() {
-  const body = document.getElementById("crossrefTableBody");
-  const rows = filteredRecords.slice(0, visibleLimit);
-  document.getElementById("totalCount").textContent = allRecords.length.toLocaleString("id-ID");
-  document.getElementById("filteredCount").textContent = filteredRecords.length.toLocaleString("id-ID");
+function renderResults() {
+  const container = document.getElementById("crossrefResults");
+  const records = filteredRecords.slice(0, visibleLimit);
   document.getElementById("resultMeta").textContent = `${filteredRecords.length.toLocaleString("id-ID")} data`;
   document.getElementById("showingMeta").textContent =
-    `Menampilkan ${rows.length.toLocaleString("id-ID")} dari ${filteredRecords.length.toLocaleString("id-ID")} data`;
-  document.getElementById("btnLoadMore").hidden = rows.length >= filteredRecords.length;
+    `Menampilkan ${records.length.toLocaleString("id-ID")} dari ${filteredRecords.length.toLocaleString("id-ID")} filter`;
+  document.getElementById("btnLoadMore").hidden = records.length >= filteredRecords.length;
 
-  if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="20" class="empty-box">Tidak ada data yang sesuai dengan pencarian.</td></tr>';
+  if (!records.length) {
+    container.innerHTML = '<div class="empty-box">Tidak ada filter yang sesuai dengan pencarian.</div>';
     return;
   }
 
-  body.innerHTML = rows.map((record, index) => {
-    const brandCells = BRANDS.map(brand => {
+  container.innerHTML = records.map(record => {
+    const brandRows = BRANDS.map((brand, index) => {
       const item = record[brand.key] || {};
-      return `<td>${escapeHtml(item.bmc || "-")}</td><td>${escapeHtml(item.pn || "-")}</td>`;
+      return `<tr>
+        <td class="crossref-number">${(index + 1).toLocaleString("id-ID")}</td>
+        <td><span class="crossref-brand">${escapeHtml(brand.label)}</span></td>
+        <td>${escapeHtml(item.bmc || "-")}</td>
+        <td class="crossref-part-number">${escapeHtml(item.pn || "-")}</td>
+      </tr>`;
     }).join("");
-    return `<tr>
-      <td class="crossref-number">${(index + 1).toLocaleString("id-ID")}</td>
-      <td>${escapeHtml(record.type || "-")}</td>
-      <td>${escapeHtml(record.namaItem || "-")}</td>
-      <td>${escapeHtml(record.desc || "-")}</td>
-      ${brandCells}
-    </tr>`;
+
+    return `<article class="crossref-card">
+      <div class="crossref-card-heading">
+        <div class="crossref-engine">
+          <span class="crossref-engine-badge">MODEL ENGINE</span>
+          <strong>${escapeHtml(record.type || "-")}</strong>
+        </div>
+        <h2>${escapeHtml(record.namaItem || "-")}</h2>
+        <p>${escapeHtml(record.desc || "-")}</p>
+      </div>
+      <div class="crossref-card-table-wrap">
+        <table class="mr-table crossref-card-table">
+          <thead><tr><th>No</th><th>Brand / Merek</th><th>BMC</th><th>Part Number</th></tr></thead>
+          <tbody>${brandRows}</tbody>
+        </table>
+      </div>
+    </article>`;
   }).join("");
 }
 
 function showMore() {
   visibleLimit += INITIAL_RENDER_LIMIT;
-  renderTable();
+  renderResults();
 }
 
 function exportToExcel() {
@@ -252,10 +255,15 @@ function saveApiConfig() {
 
 document.addEventListener("DOMContentLoaded", () => {
   restoreCache();
-  document.getElementById("filterType").addEventListener("change", () => applyFilters());
-  document.getElementById("filterSearch").addEventListener("input", () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => applyFilters(), 150);
+  document.getElementById("filterForm").addEventListener("submit", event => {
+    event.preventDefault();
+    applyFilters();
+  });
+  ["filterType", "filterName", "filterPartNo"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => applyFilters(), 150);
+    });
   });
   document.getElementById("apiConfigBackdrop").addEventListener("click", event => {
     if (event.target.id === "apiConfigBackdrop") closeApiConfig();
