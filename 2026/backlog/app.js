@@ -899,7 +899,7 @@ function confirmDeleteBacklog(rowIndex) {
   const equipment = record ? getRecordValue(record, "Equipment Name") : "";
   Swal.fire({
     title: "Hapus Backlog?",
-    text: `Data ${equipment || "Backlog ini"} akan dihapus dari sheet Entry.`,
+    text: `Data ${equipment || "Backlog ini"} akan dihapus dari server.`,
     icon: "warning",
     showCancelButton: true,
     confirmButtonColor: "#dc2626",

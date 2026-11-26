@@ -701,7 +701,7 @@ function showInputRhLoading(title) {
       <div class="save-loading-content" role="status" aria-live="polite">
         <span class="save-loading-spinner" aria-hidden="true"></span>
         <div class="save-loading-details">
-          <span class="save-loading-caption">Sinkronisasi data ke Google Sheet</span>
+          <span class="save-loading-caption">Sinkronisasi data ke server.</span>
           <span class="save-loading-progress" aria-hidden="true"></span>
         </div>
       </div>
