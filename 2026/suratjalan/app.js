@@ -3,6 +3,7 @@
 // ============================================================
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbyCdP5LMXTjhg4OFguBeIGWh8NkGLovZ9dDL-Q863LSA1wJOpleCY5Ry9eFrbeNHgp59A/exec";
 const STORAGE_KEY_API = "MTC_SURAT_JALAN_GAS_URL";
+const STORAGE_KEY_SNAPSHOT = "MTC_SURAT_JALAN_DATA_SNAPSHOT_V1";
 
 let sheetColumns = [];
 let allRecords = [];
@@ -108,14 +109,51 @@ async function callGasApi(payload) {
 
 document.addEventListener("DOMContentLoaded", () => {
   applyDeveloperAccess();
-  loadData();
+  const hasCachedData = restoreLocalSnapshot();
+  loadData(false, hasCachedData);
 });
 
-async function loadData(forceRefresh = false) {
+function saveLocalSnapshot() {
   try {
-    const colSpan = Math.max(sheetColumns.length + 2, 11);
-    document.getElementById("rekapTableBody").innerHTML =
-      `<tr><td colspan="${colSpan}" class="empty-box">Memuat data silahkan tunggu...</td></tr>`;
+    localStorage.setItem(STORAGE_KEY_SNAPSHOT, JSON.stringify({
+      ts: Date.now(),
+      columns: sheetColumns,
+      records: allRecords,
+      materials: materialCatalog
+    }));
+  } catch (err) {
+    console.warn("Gagal menyimpan cache Surat Jalan ke localStorage.", err);
+  }
+}
+
+function restoreLocalSnapshot() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SNAPSHOT);
+    if (!raw) return false;
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || !Array.isArray(snapshot.records)) return false;
+
+    sheetColumns = Array.isArray(snapshot.columns) && snapshot.columns.length > 0
+      ? snapshot.columns
+      : getFallbackColumns();
+    allRecords = snapshot.records;
+    materialCatalog = Array.isArray(snapshot.materials) ? snapshot.materials : [];
+    renderMaterialDatalist();
+    applyFilters();
+    return true;
+  } catch (err) {
+    console.warn("Gagal membaca cache Surat Jalan dari localStorage.", err);
+    return false;
+  }
+}
+
+async function loadData(forceRefresh = false, silentBackground = false) {
+  try {
+    if (!silentBackground) {
+      const colSpan = Math.max(sheetColumns.length + 2, 11);
+      document.getElementById("rekapTableBody").innerHTML =
+        `<tr><td colspan="${colSpan}" class="empty-box">Memuat data silahkan tunggu...</td></tr>`;
+    }
 
     const res = await callGasApi({ action: "getData", forceRefresh: Boolean(forceRefresh) });
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : getFallbackColumns();
@@ -123,12 +161,17 @@ async function loadData(forceRefresh = false) {
     materialCatalog = Array.isArray(res.materials) ? res.materials : [];
     renderMaterialDatalist();
     applyFilters();
-    showToast("Data Surat Jalan berhasil dimuat.", "success");
+    saveLocalSnapshot();
+    if (!silentBackground || forceRefresh) showToast("Data Surat Jalan berhasil dimuat.", "success");
   } catch (err) {
-    const colSpan = Math.max(sheetColumns.length + 2, 11);
-    document.getElementById("rekapTableBody").innerHTML =
-      `<tr><td colspan="${colSpan}" class="empty-box" style="color:#dc2626;">${escapeHtml(err.message)}</td></tr>`;
-    showToast(err.message, "error", "Koneksi Gagal");
+    if (silentBackground) {
+      showToast(`Cache ditampilkan, tetapi sinkronisasi gagal: ${err.message}`, "error", "Sinkronisasi Gagal");
+    } else {
+      const colSpan = Math.max(sheetColumns.length + 2, 11);
+      document.getElementById("rekapTableBody").innerHTML =
+        `<tr><td colspan="${colSpan}" class="empty-box" style="color:#dc2626;">${escapeHtml(err.message)}</td></tr>`;
+      showToast(err.message, "error", "Koneksi Gagal");
+    }
   }
 }
 
@@ -569,6 +612,7 @@ async function submitCreateDocument() {
     }
     selectedNoDoc = noDoc;
     applyFilters();
+    saveLocalSnapshot();
     showToast(`Surat Jalan ${noDoc} (${items.length} item) berhasil disimpan.`, "success");
   } catch (err) {
     Swal.fire({ icon: "error", title: "Gagal Simpan", text: err.message });
@@ -636,6 +680,7 @@ async function submitEditRow() {
     sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : sheetColumns;
     allRecords = res.records || [];
     applyFilters();
+    saveLocalSnapshot();
     showToast("Baris Surat Jalan berhasil diperbarui.", "success");
   } catch (err) {
     Swal.fire({ icon: "error", title: "Gagal Update", text: err.message });
@@ -659,6 +704,7 @@ function confirmDeleteRow(rowIndex, closeModalOnSuccess = false) {
       if (closeModalOnSuccess) closeEditRowModal();
       allRecords = res.records || [];
       applyFilters();
+      saveLocalSnapshot();
       showToast("Baris berhasil dihapus.", "success");
     } catch (err) {
       Swal.fire({ icon: "error", title: "Gagal", text: err.message });
@@ -683,6 +729,7 @@ function confirmDeleteDocument(noDoc) {
       allRecords = res.records || [];
       selectedNoDoc = null;
       applyFilters();
+      saveLocalSnapshot();
       switchView("all");
       showToast(`Dokumen ${noDoc} telah dihapus.`, "success");
     } catch (err) {

@@ -3,9 +3,11 @@
 // ============================================================
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbybA4vjnZb-79VAHSO0Gb7fQCS6JSxjdQN8SF-fJhOeVIe2IFMbb2OxeP7rAc67T20tww/exec";
 const STORAGE_KEY_API = "MTC_INPUT_RH_GAS_URL";
+const STORAGE_KEY_SNAPSHOT = "MTC_INPUT_RH_DATA_SNAPSHOT_V1";
 
 let sheetColumns = [];
 let sheetRows = [];
+let sheetDate = "";
 let pendingUpdates = new Map(); // "rowIndex_colIndex" -> { rowIndex, colIndex, value }
 let pendingNewRows = [];
 let selectedRowKey = null;    // rowIndex angka atau "NEW_0"
@@ -56,32 +58,72 @@ async function callGasApi(payload) {
 document.addEventListener("DOMContentLoaded", () => {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   window._preferredMonth = months[new Date().getMonth()];
-  loadSheetData();
+  const hasCachedData = restoreLocalSnapshot();
+  loadSheetData(hasCachedData);
   setupClipboardPaste();
 });
 
-async function loadSheetData() {
+function saveLocalSnapshot() {
   try {
-    document.getElementById("rhGridBody").innerHTML =
-      `<tr><td style="padding:24px; text-align:center; color:var(--text-muted);">Memuat data server...</td></tr>`;
-    const res = await callGasApi({ action: "getData" });
-    applyServerData(res, true);
-    showToast("Data Server tersinkronisasi.", "success");
+    localStorage.setItem(STORAGE_KEY_SNAPSHOT, JSON.stringify({
+      ts: Date.now(),
+      columns: sheetColumns,
+      rows: sheetRows,
+      sheetDate
+    }));
   } catch (err) {
-    document.getElementById("rhGridBody").innerHTML =
-      `<tr><td style="padding:24px; text-align:center; color:#dc2626; font-weight:700;">${err.message}</td></tr>`;
+    console.warn("Gagal menyimpan cache Input RH ke localStorage.", err);
   }
 }
 
-function applyServerData(res, isInitial = false) {
+function restoreLocalSnapshot() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SNAPSHOT);
+    if (!raw) return false;
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || !Array.isArray(snapshot.columns) || !Array.isArray(snapshot.rows)) return false;
+
+    applyServerData({
+      columns: snapshot.columns,
+      rows: snapshot.rows,
+      sheetDate: snapshot.sheetDate
+    }, true, false);
+    return true;
+  } catch (err) {
+    console.warn("Gagal membaca cache Input RH dari localStorage.", err);
+    return false;
+  }
+}
+
+async function loadSheetData(silentBackground = false) {
+  try {
+    if (!silentBackground) {
+      document.getElementById("rhGridBody").innerHTML =
+        `<tr><td style="padding:24px; text-align:center; color:var(--text-muted);">Memuat data server...</td></tr>`;
+    }
+    const res = await callGasApi({ action: "getData" });
+    applyServerData(res, true);
+    if (!silentBackground) showToast("Data Server tersinkronisasi.", "success");
+  } catch (err) {
+    if (silentBackground) {
+      showToast(`Cache ditampilkan, tetapi sinkronisasi gagal: ${err.message}`, "error", "Sinkronisasi Gagal");
+    } else {
+      document.getElementById("rhGridBody").innerHTML =
+        `<tr><td style="padding:24px; text-align:center; color:#dc2626; font-weight:700;">${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+}
+
+function applyServerData(res, isInitial = false, persistSnapshot = true) {
   sheetColumns = res.columns || [];
   sheetRows = res.rows || [];
+  if (res.sheetDate) sheetDate = res.sheetDate;
   pendingUpdates.clear();
   pendingNewRows = [];
   updateDirtyCounter();
 
-  if (res.sheetDate) {
-    document.getElementById("sheetInfoText").textContent = `• ${res.sheetDate} • ${sheetRows.length} Unit`;
+  if (sheetDate) {
+    document.getElementById("sheetInfoText").textContent = `• ${sheetDate} • ${sheetRows.length} Unit`;
   }
 
   populateFilters(isInitial);
@@ -92,6 +134,7 @@ function applyServerData(res, isInitial = false) {
   }
 
   renderAll();
+  if (persistSnapshot) saveLocalSnapshot();
 }
 
 function populateFilters(isInitial) {
