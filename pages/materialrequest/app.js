@@ -349,6 +349,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   });
+  window.addEventListener("resize", repositionMaterialSuggestPopup);
+  document.addEventListener("scroll", event => {
+    const popup = document.getElementById("materialSuggestPopup");
+    if (popup && !popup.contains(event.target)) repositionMaterialSuggestPopup();
+  }, true);
 });
 
 async function loadData(forceRefresh = false, silentBackground = false) {
@@ -605,17 +610,14 @@ function bindEquipmentPairInputs(eqNoEl, eqNameEl) {
 // AUTOCOMPLETE & VALIDASI KETAT KATALOG MATERIAL CODE
 // ============================================================
 function searchMaterialCatalog(query) {
-  const q = String(query || "").trim().toLowerCase();
-  if (!q) return materialCatalog.slice(0, 35);
+  const terms = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return [];
   const out = [];
   for (let i = 0; i < materialCatalog.length; i++) {
     const m = materialCatalog[i];
-    if (
-      String(m.code || "").toLowerCase().includes(q) ||
-      String(m.itemName || "").toLowerCase().includes(q) ||
-      String(m.itemSize || "").toLowerCase().includes(q) ||
-      String(m.partNo || "").toLowerCase().includes(q)
-    ) {
+    const values = [m.code, m.itemName, m.itemSize, m.partNo, m.unit]
+      .map(value => String(value || "").toLowerCase());
+    if (terms.every(term => values.some(value => value.includes(term)))) {
       out.push(m);
       if (out.length >= 40) break;
     }
@@ -623,17 +625,52 @@ function searchMaterialCatalog(query) {
   return out;
 }
 
+function positionMaterialSuggestPopup(popup, inputEl) {
+  const rect = inputEl.getBoundingClientRect();
+  const margin = 8;
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const availableWidth = Math.max(0, viewportWidth - margin * 2);
+  const width = Math.min(560, availableWidth, Math.max(rect.width, Math.min(380, availableWidth)));
+  const aboveSpace = Math.max(0, rect.top - margin - 4);
+  const belowSpace = Math.max(0, viewportHeight - rect.bottom - margin - 4);
+
+  popup.style.width = `${width}px`;
+  popup.style.minWidth = `${Math.min(380, availableWidth)}px`;
+  popup.style.maxWidth = `${availableWidth}px`;
+  popup.style.left = `${Math.max(margin, Math.min(rect.left, viewportWidth - width - margin))}px`;
+  popup.style.maxHeight = "250px";
+  popup.style.display = "block";
+
+  const desiredHeight = Math.min(250, popup.scrollHeight);
+  const placeAbove = belowSpace < desiredHeight && aboveSpace > belowSpace;
+  const availableHeight = placeAbove ? aboveSpace : belowSpace;
+  popup.style.maxHeight = `${Math.max(40, Math.min(250, availableHeight))}px`;
+  const popupHeight = popup.getBoundingClientRect().height;
+  popup.style.top = `${placeAbove
+    ? Math.max(margin, rect.top - popupHeight - 4)
+    : rect.bottom + 4}px`;
+}
+
+function repositionMaterialSuggestPopup() {
+  const popup = document.getElementById("materialSuggestPopup");
+  if (popup && popup.style.display !== "none" && activeSuggestContext) {
+    positionMaterialSuggestPopup(popup, activeSuggestContext.inputEl);
+  }
+}
+
 function showMaterialSuggestPopup(inputEl, onSelectCallback) {
   const popup = document.getElementById("materialSuggestPopup");
   if (!popup || !inputEl) return;
 
+  if (!inputEl.value.trim()) {
+    hideMaterialSuggestPopup();
+    return;
+  }
+
   hideAssetSuggestPopup();
   activeSuggestContext = { inputEl, onSelect: onSelectCallback };
   const matches = searchMaterialCatalog(inputEl.value);
-
-  const rect = inputEl.getBoundingClientRect();
-  popup.style.left = `${Math.min(rect.left, window.innerWidth - 400)}px`;
-  popup.style.top = `${Math.min(rect.bottom + 3, window.innerHeight - 260)}px`;
 
   if (matches.length === 0) {
     popup.innerHTML = `<div class="mat-suggest-empty">Tidak ditemukan di database Material Code (tidak dapat diinput).</div>`;
@@ -650,7 +687,7 @@ function showMaterialSuggestPopup(inputEl, onSelectCallback) {
   }
 
   popup._currentMatches = matches;
-  popup.style.display = "block";
+  positionMaterialSuggestPopup(popup, inputEl);
 }
 
 function hideMaterialSuggestPopup() {
@@ -703,13 +740,30 @@ function bindCatalogPairToContainer(containerEl, selectors, isCreateModal = true
   };
 
   if (codeInp) {
-    codeInp.addEventListener("focus", () => showMaterialSuggestPopup(codeInp, applyMat));
+    codeInp.addEventListener("focus", () => {
+      if (codeInp.value.trim()) showMaterialSuggestPopup(codeInp, applyMat);
+    });
     codeInp.addEventListener("input", () => {
+      if (!codeInp.value.trim()) {
+        codeInp.classList.remove("valid-match", "invalid-match");
+        if (nameInp) {
+          nameInp.value = "";
+          nameInp.classList.remove("valid-match", "invalid-match");
+        }
+        if (sizeInp) sizeInp.value = "";
+        if (unitInp) unitInp.value = "";
+        hideMaterialSuggestPopup();
+        return;
+      }
       const exact = materialCatalog.find(m => String(m.code).trim() === String(codeInp.value).trim());
       if (exact) {
         applyMat(exact);
       } else {
         codeInp.classList.remove("valid-match");
+        if (nameInp) {
+          nameInp.value = "";
+          nameInp.classList.remove("valid-match");
+        }
         if (sizeInp) sizeInp.value = "";
         if (unitInp) unitInp.value = "";
       }
@@ -718,11 +772,28 @@ function bindCatalogPairToContainer(containerEl, selectors, isCreateModal = true
   }
 
   if (nameInp) {
-    nameInp.addEventListener("focus", () => showMaterialSuggestPopup(nameInp, applyMat));
+    nameInp.addEventListener("focus", () => {
+      if (nameInp.value.trim()) showMaterialSuggestPopup(nameInp, applyMat);
+    });
     nameInp.addEventListener("input", () => {
+      if (!nameInp.value.trim()) {
+        nameInp.classList.remove("valid-match", "invalid-match");
+        if (codeInp) {
+          codeInp.value = "";
+          codeInp.classList.remove("valid-match", "invalid-match");
+        }
+        if (sizeInp) sizeInp.value = "";
+        if (unitInp) unitInp.value = "";
+        hideMaterialSuggestPopup();
+        return;
+      }
       const valid = validateStrictMaterialPair(codeInp ? codeInp.value : "", nameInp.value);
       if (!valid) {
         nameInp.classList.remove("valid-match");
+        if (codeInp) {
+          codeInp.value = "";
+          codeInp.classList.remove("valid-match");
+        }
         if (sizeInp) sizeInp.value = "";
         if (unitInp) unitInp.value = "";
       }
@@ -1227,7 +1298,7 @@ function renderInlineItemRowHtml(itemObj, seq, isNewRow, conditions, statuses) {
     <tr ${rowTypeAttr}>
       <td class="text-center row-num">${seq}</td>
       <td><input type="text" class="inline-input text-center code-mono inl-code" value="${escapeHtml(String(itemObj.materialNo || ""))}" placeholder="Kode..." autocomplete="off" /></td>
-      <td><input type="text" class="inline-input inl-name" value="${escapeHtml(itemObj.itemName || "")}" placeholder="Nama item..." autocomplete="off" /></td>
+      <td><input type="text" class="inline-input inl-name" value="${escapeHtml(itemObj.itemName || "")}" placeholder="Nama / ukuran (mis. Hose 3/4)..." autocomplete="off" /></td>
       <td><input type="text" class="inline-input text-center inl-size" value="${escapeHtml(itemObj.itemSize || "")}" readonly /></td>
       <td><input type="number" class="inline-input text-center inl-qty" value="${itemObj.qty ?? 1}" min="0" step="any" /></td>
       <td><input type="text" class="inline-input text-center inl-unit" value="${escapeHtml(itemObj.unit || "")}" readonly /></td>
@@ -1548,7 +1619,7 @@ function addMrLineRow() {
       <input type="text" class="modal-input inp-mat-code text-center code-mono" placeholder="Kode (09521)..." autocomplete="off" />
     </td>
     <td>
-      <input type="text" class="modal-input inp-mat-name" placeholder="Ketik nama item (mis. Hose)..." autocomplete="off" />
+      <input type="text" class="modal-input inp-mat-name" placeholder="Cari nama / ukuran (mis. Hose 3/4)..." autocomplete="off" />
     </td>
     <td>
       <input type="text" class="modal-input inp-mat-size text-center" readonly placeholder="Otomatis..." style="background:#f1f5f9; font-weight:700;" />
