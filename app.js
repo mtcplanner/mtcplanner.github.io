@@ -257,30 +257,72 @@ function renderHomeCards() {
   if (!grid) return;
   grid.innerHTML = '';
 
-  if (modulesData && modulesData.home && modulesData.home.length > 0) {
-    modulesData.home.forEach(mod => {
-      const card = document.createElement('div');
-      card.className = 'home-card';
-      card.innerHTML = `<div class="home-icon">${mod.icon || '📌'}</div><div class="home-title">${mod.name}</div>`;
-      card.onclick = () => loadModule(mod.key, mod.url, mod.name);
-      grid.appendChild(card);
-    });
-  } else {
-    grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:#94a3b8; font-size:12px; padding:20px;">Belum ada sub-menu home dikonfigurasi.</div>';
+  const query = document.getElementById('heroSearchInput')?.value.trim().toLowerCase() || '';
+  const modules = query
+    ? getAllModuleEntries().filter(mod => {
+        const searchableText = `${mod.name || ''} ${mod.key || ''} ${mod.category}`.toLowerCase();
+        return query.split(/\s+/).every(term => searchableText.includes(term));
+      })
+    : (modulesData.home || []).map(mod => ({ ...mod, category: 'Home' }));
+  const pageTitle = document.getElementById('pageTitle');
+  if (pageTitle) pageTitle.textContent = query ? 'Hasil Pencarian Modul' : 'Modul Utilitas & Laporan Utama';
+
+  if (modules.length === 0) {
+    const message = query
+      ? 'Tidak ada modul atau laporan yang cocok dengan pencarian.'
+      : 'Belum ada sub-menu home dikonfigurasi.';
+    grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; color:#94a3b8; font-size:12px; padding:20px;">${message}</div>`;
+    return;
   }
+
+  modules.forEach(mod => {
+    const card = document.createElement('div');
+    card.className = 'home-card';
+
+    const icon = document.createElement('div');
+    icon.className = 'home-icon';
+    icon.textContent = mod.icon || '📌';
+
+    const title = document.createElement('div');
+    title.className = 'home-title';
+    title.textContent = mod.name || mod.key;
+
+    card.append(icon, title);
+    if (query) {
+      const category = document.createElement('div');
+      category.className = 'home-category';
+      category.textContent = mod.category;
+      card.appendChild(category);
+    }
+
+    card.onclick = () => loadModule(mod.key, mod.url, mod.name || mod.key);
+    grid.appendChild(card);
+  });
 }
 
 function filterHomeCards(query) {
-  const q = query.toLowerCase();
-  const cards = document.querySelectorAll('.home-card');
-  cards.forEach(card => {
-    const title = card.querySelector('.home-title')?.textContent.toLowerCase() || '';
-    if (title.includes(q)) {
-      card.style.display = 'flex';
-    } else {
-      card.style.display = 'none';
-    }
+  const input = document.getElementById('heroSearchInput');
+  if (input && input.value !== query) input.value = query;
+  renderHomeCards();
+}
+
+function getAllModuleEntries() {
+  const entries = [];
+  const addEntries = (modules, category) => {
+    if (!Array.isArray(modules)) return;
+    modules.forEach(mod => {
+      if (mod && mod.key) entries.push({ ...mod, category });
+    });
+  };
+
+  addEntries(modulesData.home, 'Home');
+  addEntries(modulesData.standalone, 'Modul Mandiri');
+
+  const years = modulesData.dataEntry?.years || {};
+  Object.keys(years).sort((a, b) => Number(b) - Number(a)).forEach(year => {
+    addEntries(years[year], `Data Entry ${year}`);
   });
+  return entries;
 }
 
 function toggleSidebar() {
