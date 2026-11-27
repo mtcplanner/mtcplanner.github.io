@@ -3,73 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Input Transaksi Harian Oli | MTC Planner</title>
+  <title>Rekap &amp; Input Oli | MTC Planner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
   <main class="page-shell">
     <header class="hero">
-      <div>
-        <span class="eyebrow">DAILY OIL ENTRY</span>
-        <h1>Input Transaksi Harian Oli</h1>
-        <p>Pencatatan penerimaan dan pemakaian oli.</p>
+      <div class="hero-brand">
+        <span class="eyebrow">MONITORING OLI</span>
+        <h1>Rekap &amp; Input Transaksi Oli</h1>
       </div>
       <div class="hero-actions">
+        <div class="header-stock-strip" id="headerStockCards" aria-label="Sisa stok setiap jenis oli" role="list">
+          <span class="header-stock-message">Memuat saldo stok...</span>
+        </div>
         <button class="button button-light" id="refreshButton" type="button">↻ Refresh Data</button>
-        <a class="button button-primary" id="dashboardLink" href="../../home/dashboardoli/">▦ Dashboard Oli</a>
       </div>
     </header>
 
-    <div class="notice notice-error" id="errorNotice" role="alert" hidden></div>
-    <div class="notice notice-success" id="successNotice" role="status" hidden></div>
+    <section class="kpi-grid" aria-label="Ringkasan seluruh transaksi">
+      <article class="kpi-card">
+        <span class="kpi-icon">🧾</span>
+        <div><span class="kpi-label">Total Transaksi</span><strong class="kpi-value" id="summaryTransactions">0</strong><small>Seluruh periode</small></div>
+      </article>
+      <article class="kpi-card kpi-incoming">
+        <span class="kpi-icon">📥</span>
+        <div><span class="kpi-label">Total Oli Masuk</span><strong class="kpi-value" id="summaryIncoming">0 L</strong><small>Akumulasi penerimaan</small></div>
+      </article>
+      <article class="kpi-card kpi-usage">
+        <span class="kpi-icon">📤</span>
+        <div><span class="kpi-label">Total Oli Terpakai</span><strong class="kpi-value" id="summaryUsage">0 L</strong><small>Akumulasi pemakaian</small></div>
+      </article>
+      <article class="kpi-card kpi-days">
+        <span class="kpi-icon">📅</span>
+        <div><span class="kpi-label">Hari Tercatat</span><strong class="kpi-value" id="summaryDays">0</strong><small>Tanggal dengan transaksi</small></div>
+      </article>
+    </section>
 
-    <section class="panel">
-      <div class="panel-heading">
-        <h2>📋 Input Transaksi Harian Oli</h2>
-        <div class="panel-actions">
-          <button class="button button-light" id="addRowButton" type="button">＋ Tambah Baris</button>
-          <button class="button button-primary" id="saveButton" type="button">▣ Posting Transaksi</button>
+    <div class="workbench">
+      <aside class="panel daily-navigation">
+        <div class="panel-heading">
+          <div>
+            <h2>📅 Rekap Harian</h2>
+            <p>Pilih tanggal untuk membuka detail.</p>
+          </div>
+          <span class="count-pill" id="dailyCount">0 Hari</span>
+        </div>
+        <div class="table-wrap daily-list-scroll">
+          <table class="daily-table">
+            <thead><tr><th>Tanggal</th><th>Transaksi</th></tr></thead>
+            <tbody id="dailySummaryBody">
+              <tr><td class="empty-cell" colspan="2">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+
+      <section class="panel detail-panel">
+        <nav class="tab-switch" aria-label="Navigasi detail transaksi oli">
+          <button class="tab-btn active" id="tabRekap" type="button" aria-selected="true">▤ Rekap Harian</button>
+          <button class="tab-btn" id="tabDetail" type="button" aria-selected="false">☷ Detail Transaksi</button>
+        </nav>
+
+        <div class="tab-view active" id="rekapView">
+          <section class="subpanel">
+            <div class="panel-heading">
+              <div>
+                <h2>📋 Input Transaksi Harian</h2>
+                <p>Catat transaksi oli baru secara batch.</p>
+              </div>
+              <div class="panel-actions">
+                <button class="button button-light" id="addRowButton" type="button">＋ Tambah Baris</button>
+                <button class="button button-primary" id="saveButton" type="button">▣ Simpan</button>
+              </div>
+            </div>
+
+            <div class="defaults-grid">
+              <label class="field">
+                <span>Tanggal Default</span>
+                <input type="date" id="defaultDate">
+              </label>
+              <label class="field">
+                <span>Lokasi Default (Opsional)</span>
+                <select id="defaultLocation"><option value="">– Pilih Lokasi Default –</option></select>
+              </label>
+              <label class="field">
+                <span>No. Ref / SJ / WO Default</span>
+                <input type="text" id="defaultReference" placeholder="Contoh: WO-2026-001">
+              </label>
+              <label class="field">
+                <span>Input By</span>
+                <input type="text" id="inputBy" readonly>
+              </label>
+            </div>
+
+            <div class="table-wrap">
+              <table class="entry-table">
+                <thead>
+                  <tr>
+                    <th>No</th><th>MR</th><th>Tanggal*</th><th>Lokasi*</th><th>Nama Oli*</th>
+                    <th>Sisa Stok</th><th>Tipe Transaksi*</th><th>Qty (Liter)*</th>
+                    <th>No Ref / SJ / WO</th><th>Keterangan Unit</th><th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="entryRows"></tbody>
+              </table>
+            </div>
+            <p class="table-tip">Tekan Tab atau Enter pada kolom Keterangan baris terakhir untuk menambah baris.</p>
+          </section>
+        </div>
+
+        <div class="tab-view" id="detailView">
+          <div class="panel-heading detail-heading">
+            <div>
+              <h2>☷ Detail Transaksi Harian</h2>
+              <p id="detailDateLabel">Pilih tanggal pada navigasi Rekap Harian.</p>
+            </div>
+            <div class="panel-actions">
+              <button class="button button-light" id="cancelEditButton" type="button" hidden>Batal Edit</button>
+              <button class="button button-primary" id="editButton" type="button" disabled>✎ Edit</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th>No</th><th>MR</th><th>Tanggal</th><th>Lokasi</th><th>Nama Oli</th>
+                  <th>Tipe</th><th>Qty (L)</th><th>No. Ref / SJ / WO</th><th>Keterangan Unit</th>
+                  <th>Input By</th><th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="detailRows">
+                <tr><td class="empty-cell" colspan="11">Pilih tanggal untuk melihat detail transaksi.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-
-      <div class="defaults-grid">
-        <label class="field">
-          <span>Tanggal Default Transaksi</span>
-          <input type="date" id="defaultDate">
-        </label>
-        <label class="field">
-          <span>Lokasi Default (Opsional)</span>
-          <select id="defaultLocation"><option value="">– Pilih Lokasi Default –</option></select>
-        </label>
-        <label class="field">
-          <span>No. Ref / SJ / WO Default</span>
-          <input type="text" id="defaultReference" placeholder="Contoh: WO-2026-001">
-        </label>
-        <label class="field">
-          <span>Input By (User Login)</span>
-          <input type="text" id="inputBy" readonly>
-        </label>
-      </div>
-
-      <div class="table-wrap">
-        <table class="entry-table">
-          <thead>
-            <tr>
-              <th>No</th><th>MR</th><th>Tanggal*</th><th>Lokasi*</th><th>Nama Oli*</th>
-              <th>Sisa Stok</th><th>Tipe Transaksi*</th><th>Qty (Liter)*</th>
-              <th>No Ref / SJ / WO</th><th>Keterangan Unit</th><th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody id="entryRows"></tbody>
-        </table>
-      </div>
-      <p class="table-tip">Tips: tekan Tab atau Enter pada kolom Keterangan baris terakhir untuk menambah baris. Transaksi akan memperbarui Transaksi_Harian dan Rincian_Harian.</p>
-    </section>
+      </section>
+    </div>
   </main>
-  <script src="../../shared/monitoringoli-api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

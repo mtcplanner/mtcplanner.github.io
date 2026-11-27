@@ -1,5 +1,35 @@
+const MONITORING_OLI_GAS_URL = "https://script.google.com/macros/s/AKfycbxDqN_3UoOxvyRGNo6iH795N9mxUtNB8mWpZfsMq-nrLekclAckAFBm3NTy9VCII736/exec";
 let dashboardData = null;
 const numberFormat = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 2 });
+
+async function requestMonitoringOli(action, payload = {}) {
+  let response;
+  try {
+    response = await fetch(MONITORING_OLI_GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, ...payload })
+    });
+  } catch (error) {
+    throw new Error("Gagal terhubung ke server Monitoring Oli.");
+  }
+
+  if (!response.ok) {
+    throw new Error(`Server Monitoring Oli merespons ${response.status}.`);
+  }
+
+  let result;
+  try {
+    result = await response.json();
+  } catch (error) {
+    throw new Error("Respons server Monitoring Oli tidak valid.");
+  }
+
+  if (!result || result.success === false) {
+    throw new Error(result && result.message ? result.message : "Permintaan Monitoring Oli gagal.");
+  }
+  return result;
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -19,12 +49,6 @@ function formatDate(value) {
   if (!value) return "-";
   const parts = String(value).split("-");
   return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : String(value);
-}
-
-function moduleHref(path) {
-  const url = new URL(path, window.location.href);
-  url.search = window.location.search;
-  return url.href;
 }
 
 function setError(message) {
@@ -185,7 +209,7 @@ async function loadDashboard() {
   button.textContent = "Memuat...";
   setError("");
   try {
-    const data = await MonitoringOliApi.request("getInitialData");
+    const data = await requestMonitoringOli("getInitialData");
     renderDashboard(data);
   } catch (error) {
     setError(error.message);
@@ -195,7 +219,6 @@ async function loadDashboard() {
   }
 }
 
-document.getElementById("inputLink").href = moduleHref("../../2026/inputoli/");
 document.getElementById("refreshButton").addEventListener("click", loadDashboard);
 document.getElementById("locationSearch").addEventListener("input", event => renderLocations(event.target.value));
 loadDashboard();
