@@ -15,7 +15,8 @@ let allRecords = [];
 let filteredRecords = [];
 let materialCatalog = []; // [{ code, partNo, itemName, itemSize, unit }]
 let selectedNoDoc = null;
-let editingRowIndex = null;
+let isInlineEditingDocument = false;
+let pendingDeletedRowIndices = [];
 let currentView = "all"; // "all" | "detail"
 let hasCachedMaterialCatalog = false;
 let materialCatalogIsStale = true;
@@ -310,10 +311,15 @@ function handleItemNoInput(inputEl, isEditModal = false) {
   inputEl.value = matched.code;
 
   if (isEditModal) {
+    const row = inputEl.closest("tr");
     const form = inputEl.closest(".sj-inline-edit-panel");
-    const itemEl = form ? form.querySelector("#inlineEditItem") : document.getElementById("editItem");
+    const itemEl = row
+      ? row.querySelector(".inp-item")
+      : form ? form.querySelector("#inlineEditItem") : document.getElementById("editItem");
     if (itemEl && matched.itemName) itemEl.value = matched.itemName;
-    const satuanEl = form ? form.querySelector("#inlineEditSatuan") : document.getElementById("editSatuan");
+    const satuanEl = row
+      ? row.querySelector(".inp-satuan")
+      : form ? form.querySelector("#inlineEditSatuan") : document.getElementById("editSatuan");
     if (satuanEl && matched.unit) satuanEl.value = matched.unit;
   } else {
     const tr = inputEl.closest("tr");
@@ -437,9 +443,10 @@ function renderDocList() {
   }).join("");
 }
 
-function selectDocument(noDoc, startEditing = false, rowIndex = null) {
+function selectDocument(noDoc) {
   selectedNoDoc = noDoc;
-  editingRowIndex = startEditing && rowIndex !== null ? Number(rowIndex) : null;
+  isInlineEditingDocument = false;
+  pendingDeletedRowIndices = [];
   renderDocList();
   switchView("detail");
   renderDetailDocument();
@@ -520,8 +527,8 @@ function renderRekapTable() {
     return `
       <tr class="clickable-row" tabindex="0" data-no-doc="${escapeHtml(documentKey)}" data-row-index="${escapeHtml(String(r.rowIndex))}"
         title="Klik untuk membuka detail dan edit dokumen"
-        onclick="selectDocument(this.dataset.noDoc, true, this.dataset.rowIndex)"
-        onkeydown="handleRecordRowKeydown(event, this.dataset.noDoc, this.dataset.rowIndex)">
+        onclick="selectDocument(this.dataset.noDoc)"
+        onkeydown="handleRecordRowKeydown(event, this.dataset.noDoc)">
         <td class="text-center">${idx + 1}</td>
         ${cellsHtml}
       </tr>
@@ -529,10 +536,10 @@ function renderRekapTable() {
   }).join("");
 }
 
-function handleRecordRowKeydown(event, noDoc, rowIndex) {
+function handleRecordRowKeydown(event, noDoc) {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    selectDocument(noDoc, true, rowIndex);
+    selectDocument(noDoc);
   }
 }
 
@@ -561,64 +568,65 @@ function renderDetailDocument() {
   const totalQty = lines.reduce((acc, cur) => acc + (Number(getRecordFieldValue(cur, "qty")) || 0), 0);
   const hasItemNoCol = sheetColumns.some(c => c.key === "itemNo");
   const hasSatuanCol = sheetColumns.some(c => c.key === "satuan");
-  const editingRow = lines.find(line => Number(line.rowIndex) === Number(editingRowIndex));
-  const editForm = editingRow ? `
+  const firstItem = lines[0];
+  const editForm = isInlineEditingDocument ? `
     <section class="sj-inline-edit-panel">
       <div class="sj-inline-edit-heading">
         <div>
-          <strong>Edit Baris Surat Jalan</strong>
-          <span>Perubahan langsung di detail dokumen.</span>
+          <strong>Edit Dokumen Surat Jalan</strong>
+          <span>Ubah informasi transaksi dan daftar item. Total item dihitung otomatis.</span>
         </div>
         <div class="sj-inline-edit-actions">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="cancelInlineEditRow()">Batal</button>
-          <button type="button" class="btn btn-primary btn-sm" onclick="saveInlineEditRow()">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="cancelInlineEditDocument()">Batal</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="saveInlineDocumentEdits()">
             <i class="bi bi-check2-circle"></i> Simpan Perubahan
           </button>
         </div>
       </div>
-      <input type="hidden" id="inlineEditRowIndex" value="${escapeHtml(String(editingRow.rowIndex))}" />
       <div class="sj-inline-edit-grid">
-        <label class="sj-inline-edit-field">Tanggal
-          <input type="date" id="inlineEditTanggal" value="${escapeHtml(String(getRecordFieldValue(editingRow, "tanggal") || ""))}" />
+        <label class="sj-inline-edit-field">Tanggal *
+          <input type="date" id="inlineDocTanggal" value="${escapeHtml(String(getRecordFieldValue(firstItem, "tanggal") || ""))}" />
         </label>
-        <label class="sj-inline-edit-field">No Document
-          <input type="text" id="inlineEditNoDoc" value="${escapeHtml(String(getRecordFieldValue(editingRow, "noDoc") || ""))}" />
+        <label class="sj-inline-edit-field">No Document *
+          <input type="text" id="inlineDocNo" value="${escapeHtml(String(getRecordFieldValue(firstItem, "noDoc") || ""))}" />
         </label>
-        ${hasItemNoCol ? `<label class="sj-inline-edit-field">Item No
-          <input type="text" id="inlineEditItemNo" list="materialCodeDatalist" value="${escapeHtml(String(getRecordFieldValue(editingRow, "itemNo") || ""))}"
-            placeholder="Pilih / ketik Item No..." oninput="handleItemNoInput(this, true)" onchange="handleItemNoInput(this, true)" />
-        </label>` : ""}
-        <label class="sj-inline-edit-field sj-inline-edit-wide">Nama Item / Barang
-          <textarea id="inlineEditItem" class="inp-item-textarea">${escapeHtml(String(getRecordFieldValue(editingRow, "item") || ""))}</textarea>
-        </label>
-        <label class="sj-inline-edit-field">Qty
-          <input type="number" id="inlineEditQty" min="0" step="any" value="${escapeHtml(String(getRecordFieldValue(editingRow, "qty") ?? ""))}" />
-        </label>
-        ${hasSatuanCol ? `<label class="sj-inline-edit-field">Satuan
-          <input type="text" id="inlineEditSatuan" value="${escapeHtml(String(getRecordFieldValue(editingRow, "satuan") || ""))}" />
-        </label>` : ""}
-        <label class="sj-inline-edit-field">Jenis Input
-          <select id="inlineEditInputType">
+        <label class="sj-inline-edit-field">Jenis Transaksi
+          <select id="inlineDocInputType">
             <option value="Barang Masuk" ${inputTypeVal.toLowerCase().includes("masuk") ? "selected" : ""}>Barang Masuk</option>
             <option value="Barang Keluar" ${inputTypeVal.toLowerCase().includes("keluar") ? "selected" : ""}>Barang Keluar</option>
           </select>
         </label>
         <label class="sj-inline-edit-field">Pengirim
-          <input type="text" id="inlineEditPengirim" value="${escapeHtml(String(getRecordFieldValue(editingRow, "pengirim") || ""))}" />
+          <input type="text" id="inlineDocPengirim" value="${escapeHtml(String(getRecordFieldValue(firstItem, "pengirim") || ""))}" />
         </label>
         <label class="sj-inline-edit-field">Tujuan
-          <input type="text" id="inlineEditTujuan" value="${escapeHtml(String(getRecordFieldValue(editingRow, "tujuan") || ""))}" />
+          <input type="text" id="inlineDocTujuan" value="${escapeHtml(String(getRecordFieldValue(firstItem, "tujuan") || ""))}" />
         </label>
-        <label class="sj-inline-edit-field sj-inline-edit-wide">Keterangan
-          <input type="text" id="inlineEditKeterangan" value="${escapeHtml(String(getRecordFieldValue(editingRow, "keterangan") || ""))}" />
-        </label>
-        <div class="sj-inline-edit-delete">
-          <button type="button" class="btn btn-danger btn-sm" onclick="confirmDeleteRow(Number(document.getElementById('inlineEditRowIndex').value))">
-            <i class="bi bi-trash3"></i> Hapus Baris
-          </button>
-        </div>
+        <div class="sj-inline-total"><span>Total Item / Qty</span><strong>${lines.length} Item (${totalQty} Qty)</strong></div>
       </div>
     </section>
+    <div class="line-items-box">
+      <div class="line-items-head">
+        <span>Daftar Item Barang</span>
+        <button type="button" class="btn btn-success btn-sm" onclick="addInlineDocumentItemRow()">
+          <i class="bi bi-plus-lg"></i> Tambah Item
+        </button>
+      </div>
+      <div class="line-items-scroll">
+        <table class="sj-table">
+          <thead><tr>
+            <th style="width:40px;">No</th>
+            ${hasItemNoCol ? `<th style="width:130px;">Item No</th>` : ""}
+            <th style="min-width:250px;">Nama Item / Barang *</th>
+            <th style="width:80px;">Qty *</th>
+            ${hasSatuanCol ? `<th style="width:85px;">Satuan</th>` : ""}
+            <th>Keterangan</th>
+            <th style="width:45px;">Hapus</th>
+          </tr></thead>
+          <tbody id="inlineDocumentItemsBody">${lines.map((line, index) => renderInlineDocumentItemRow(line, index + 1)).join("")}</tbody>
+        </table>
+      </div>
+    </div>
   ` : "";
 
   container.innerHTML = `
@@ -629,23 +637,26 @@ function renderDetailDocument() {
       </div>
       <div class="no-print" style="display:flex; gap:6px;">
         <button type="button" class="btn btn-ghost btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Cetak</button>
-        <button type="button" class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="confirmDeleteDocument('${escapeHtml(selectedNoDoc)}')">
-          <i class="bi bi-trash3"></i> Hapus Dokumen
-        </button>
+        ${isInlineEditingDocument
+          ? ""
+          : `<button type="button" class="btn btn-primary btn-sm" onclick="startInlineEditDocument()"><i class="bi bi-pencil-square"></i> Edit</button>
+             <button type="button" class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="confirmDeleteDocument('${escapeHtml(selectedNoDoc)}')">
+               <i class="bi bi-trash3"></i> Hapus Dokumen
+             </button>`}
       </div>
     </div>
 
-    <div class="doc-meta-grid">
+    ${isInlineEditingDocument ? "" : `<div class="doc-meta-grid">
       <div class="meta-item"><span>Tanggal</span><strong>${escapeHtml(String(getRecordFieldValue(head, "tanggal") || "-"))}</strong></div>
       <div class="meta-item"><span>Jenis Transaksi</span><strong><span class="pill-type ${isIn ? "pill-in" : "pill-out"}">${escapeHtml(inputTypeVal)}</span></strong></div>
       <div class="meta-item"><span>Pengirim</span><strong>${escapeHtml(String(getRecordFieldValue(head, "pengirim") || "-"))}</strong></div>
       <div class="meta-item"><span>Tujuan</span><strong>${escapeHtml(String(getRecordFieldValue(head, "tujuan") || "-"))}</strong></div>
       <div class="meta-item"><span>Total Item / Qty</span><strong>${lines.length} Item (${totalQty} Qty)</strong></div>
-    </div>
+    </div>`}
 
     ${editForm}
 
-    <table class="sj-table">
+    ${isInlineEditingDocument ? "" : `<table class="sj-table">
       <thead>
         <tr>
           <th style="width:40px;">No</th>
@@ -654,7 +665,6 @@ function renderDetailDocument() {
           <th style="width:80px;">Qty</th>
           ${hasSatuanCol ? `<th style="width:85px;">Satuan</th>` : ""}
           <th>Keterangan</th>
-          <th style="width:85px;">Aksi</th>
         </tr>
       </thead>
       <tbody>
@@ -666,18 +676,166 @@ function renderDetailDocument() {
             <td class="text-center fw-bold">${Number(getRecordFieldValue(ln, "qty")) || 0}</td>
             ${hasSatuanCol ? `<td class="text-center">${escapeHtml(String(getRecordFieldValue(ln, "satuan") || ""))}</td>` : ""}
             <td>${escapeHtml(String(getRecordFieldValue(ln, "keterangan") || ""))}</td>
-            <td class="text-center">
-              ${editingRow && Number(editingRow.rowIndex) === Number(ln.rowIndex)
-                ? `<span class="text-muted">Sedang diedit</span>`
-                : `<button type="button" class="btn btn-ghost btn-sm" onclick="startInlineEditRow(${Number(ln.rowIndex)})" title="Edit langsung di detail">
-                    <i class="bi bi-pencil-square"></i> Edit
-                  </button>`}
-            </td>
           </tr>
         `).join("")}
       </tbody>
-    </table>
+    </table>`}
   `;
+  if (isInlineEditingDocument) {
+    const itemsBody = document.getElementById("inlineDocumentItemsBody");
+    itemsBody.addEventListener("input", updateInlineDocumentTotals);
+  }
+}
+
+function startInlineEditDocument() {
+  isInlineEditingDocument = true;
+  pendingDeletedRowIndices = [];
+  renderDetailDocument();
+}
+
+function cancelInlineEditDocument() {
+  isInlineEditingDocument = false;
+  pendingDeletedRowIndices = [];
+  renderDetailDocument();
+}
+
+function renderInlineDocumentItemRow(item, sequence, isNew = false) {
+  const hasItemNoCol = sheetColumns.some(column => column.key === "itemNo");
+  const hasSatuanCol = sheetColumns.some(column => column.key === "satuan");
+  const rowAttrs = isNew
+    ? 'data-is-new="1"'
+    : `data-is-new="0" data-row-index="${escapeHtml(String(item.rowIndex))}"`;
+  return `<tr ${rowAttrs}>
+    <td class="text-center row-num">${sequence}</td>
+    ${hasItemNoCol ? `<td><input type="text" list="materialCodeDatalist" class="modal-input inp-itemno text-center"
+      value="${escapeHtml(String(getRecordFieldValue(item, "itemNo") || ""))}" placeholder="Item No..."
+      oninput="handleItemNoInput(this, true)" onchange="handleItemNoInput(this, true)" /></td>` : ""}
+    <td><textarea class="modal-input inp-item" rows="1" placeholder="Nama barang...">${escapeHtml(String(getRecordFieldValue(item, "item") || ""))}</textarea></td>
+    <td><input type="number" class="modal-input inp-qty text-center" min="0" step="any"
+      value="${escapeHtml(String(getRecordFieldValue(item, "qty") ?? 0))}" /></td>
+    ${hasSatuanCol ? `<td><input type="text" class="modal-input inp-satuan text-center"
+      value="${escapeHtml(String(getRecordFieldValue(item, "satuan") || ""))}" /></td>` : ""}
+    <td><input type="text" class="modal-input inp-ket" value="${escapeHtml(String(getRecordFieldValue(item, "keterangan") || ""))}" placeholder="Keterangan..." /></td>
+    <td class="text-center"><button type="button" class="btn-icon del" onclick="removeInlineDocumentItemRow(this)" title="Hapus item">
+      <i class="bi bi-x-lg"></i>
+    </button></td>
+  </tr>`;
+}
+
+function addInlineDocumentItemRow() {
+  const tbody = document.getElementById("inlineDocumentItemsBody");
+  if (!tbody) return;
+  const temp = document.createElement("tbody");
+  temp.innerHTML = renderInlineDocumentItemRow({ item: "", itemNo: "", qty: 1, satuan: "", keterangan: "" }, tbody.children.length + 1, true);
+  tbody.appendChild(temp.firstElementChild);
+  updateInlineDocumentTotals();
+}
+
+function removeInlineDocumentItemRow(button) {
+  const row = button.closest("tr");
+  const tbody = document.getElementById("inlineDocumentItemsBody");
+  if (!row || !tbody) return;
+  if (tbody.children.length <= 1) return showToast("Minimal harus ada 1 item pada dokumen.", "error");
+  if (row.dataset.isNew !== "1") {
+    const rowIndex = Number(row.dataset.rowIndex);
+    if (rowIndex) pendingDeletedRowIndices.push(rowIndex);
+  }
+  row.remove();
+  Array.from(tbody.children).forEach((itemRow, index) => {
+    itemRow.querySelector(".row-num").textContent = String(index + 1);
+  });
+  updateInlineDocumentTotals();
+}
+
+function updateInlineDocumentTotals() {
+  const tbody = document.getElementById("inlineDocumentItemsBody");
+  const total = document.querySelector(".sj-inline-total strong");
+  if (!tbody || !total) return;
+  const qty = Array.from(tbody.querySelectorAll(".inp-qty"))
+    .reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+  total.textContent = `${tbody.children.length} Item (${qty} Qty)`;
+}
+
+async function saveInlineDocumentEdits() {
+  const header = {
+    tanggal: document.getElementById("inlineDocTanggal").value,
+    noDoc: document.getElementById("inlineDocNo").value.trim(),
+    inputType: document.getElementById("inlineDocInputType").value,
+    pengirim: document.getElementById("inlineDocPengirim").value.trim(),
+    tujuan: document.getElementById("inlineDocTujuan").value.trim()
+  };
+  if (!header.tanggal || !header.noDoc) {
+    return showToast("Tanggal dan No Document wajib diisi.", "error");
+  }
+
+  const existingItems = [];
+  const newItems = [];
+  const itemRows = Array.from(document.querySelectorAll("#inlineDocumentItemsBody tr"));
+  for (let index = 0; index < itemRows.length; index++) {
+    const row = itemRows[index];
+    const item = row.querySelector(".inp-item").value.trim();
+    const itemNoInput = row.querySelector(".inp-itemno");
+    const satuanInput = row.querySelector(".inp-satuan");
+    const rawQty = row.querySelector(".inp-qty").value.trim();
+    const qty = rawQty === "" ? NaN : Number(rawQty);
+    if ((!item && !(itemNoInput && itemNoInput.value.trim())) ||
+        !Number.isFinite(qty) || qty < 0) {
+      return showToast(`Item #${index + 1}: isi Item/Nama Barang dan Qty yang valid.`, "error", "Data Item Tidak Valid");
+    }
+
+    const payloadItem = {
+      item,
+      itemNo: itemNoInput ? itemNoInput.value.trim() : "",
+      qty,
+      satuan: satuanInput ? satuanInput.value.trim() : "",
+      keterangan: row.querySelector(".inp-ket").value.trim()
+    };
+    if (row.dataset.isNew === "1") newItems.push(payloadItem);
+    else existingItems.push({ ...payloadItem, rowIndex: Number(row.dataset.rowIndex) });
+  }
+  if (!existingItems.length && !newItems.length) {
+    return showToast("Dokumen harus memiliki minimal satu item.", "error");
+  }
+
+  showSuratJalanLoading("Menyimpan Perubahan Surat Jalan...");
+  try {
+    const response = await callGasApi({
+      action: "saveDocumentEdits",
+      docUpdate: {
+        originalNoDoc: selectedNoDoc,
+        header,
+        existingItems,
+        newItems,
+        deletedRowIndices: pendingDeletedRowIndices
+      }
+    });
+    Swal.close();
+    sheetColumns = Array.isArray(response.columns) && response.columns.length ? response.columns : sheetColumns;
+    allRecords = response.records || [];
+    selectedNoDoc = header.noDoc;
+    isInlineEditingDocument = false;
+    pendingDeletedRowIndices = [];
+    applyFilters();
+    saveLocalSnapshot();
+    showToast(`Perubahan dokumen ${header.noDoc} berhasil disimpan.`, "success");
+  } catch (error) {
+    Swal.close();
+    Swal.fire({ icon: "error", title: "Gagal Menyimpan", text: error.message });
+  }
+}
+
+function showSuratJalanLoading(title) {
+  Swal.fire({
+    title,
+    html: `<div class="mr-save-caption" role="status" aria-live="polite">
+      <span class="mr-save-live-dot"></span><span>Mohon tunggu, data sedang diproses</span>
+    </div>`,
+    customClass: { popup: "mr-save-popup", title: "mr-save-title", htmlContainer: "mr-save-html" },
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+    didOpen: () => Swal.showLoading()
+  });
 }
 
 // ============================================================
@@ -774,7 +932,7 @@ async function submitCreateDocument() {
   if (items.length === 0) return showToast("Isi minimal 1 item barang.", "error");
 
   closeCreateDocModal();
-  Swal.fire({ title: "Menyimpan Surat Jalan...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  showSuratJalanLoading("Menyimpan Surat Jalan...");
 
   try {
     const res = await callGasApi({
@@ -789,128 +947,54 @@ async function submitCreateDocument() {
       renderMaterialDatalist();
     }
     selectedNoDoc = noDoc;
-    editingRowIndex = null;
+    isInlineEditingDocument = false;
     applyFilters();
     saveLocalSnapshot();
     showToast(`Surat Jalan ${noDoc} (${items.length} item) berhasil disimpan.`, "success");
   } catch (err) {
+    Swal.close();
     Swal.fire({ icon: "error", title: "Gagal Simpan", text: err.message });
   }
 }
 
 // ============================================================
-// EDIT & DELETE BARIS / DOKUMEN
+// DELETE DOCUMENT
 // ============================================================
-function startInlineEditRow(rowIndex) {
-  const row = allRecords.find(record => Number(record.rowIndex) === Number(rowIndex));
-  if (!row) return;
-  selectedNoDoc = String(getRecordFieldValue(row, "noDoc") || "").trim() || "(Tanpa No Doc)";
-  editingRowIndex = Number(row.rowIndex);
-  renderDocList();
-  renderDetailDocument();
-}
-
-function cancelInlineEditRow() {
-  editingRowIndex = null;
-  renderDetailDocument();
-}
-
-async function saveInlineEditRow() {
-  const rowIndex = Number(document.getElementById("inlineEditRowIndex").value);
-  const existing = allRecords.find(record => Number(record.rowIndex) === rowIndex);
-  if (!existing) return showToast("Baris yang akan diedit tidak ditemukan. Muat ulang data.", "error");
-
-  const hasItemNoCol = sheetColumns.some(column => column.key === "itemNo");
-  const hasSatuanCol = sheetColumns.some(column => column.key === "satuan");
-  const changes = {
-    tanggal: document.getElementById("inlineEditTanggal").value,
-    noDoc: document.getElementById("inlineEditNoDoc").value.trim(),
-    itemNo: hasItemNoCol ? document.getElementById("inlineEditItemNo").value.trim() : getRecordFieldValue(existing, "itemNo"),
-    item: document.getElementById("inlineEditItem").value.trim(),
-    qty: Number(document.getElementById("inlineEditQty").value) || 0,
-    satuan: hasSatuanCol ? document.getElementById("inlineEditSatuan").value.trim() : getRecordFieldValue(existing, "satuan"),
-    inputType: document.getElementById("inlineEditInputType").value,
-    pengirim: document.getElementById("inlineEditPengirim").value.trim(),
-    tujuan: document.getElementById("inlineEditTujuan").value.trim(),
-    keterangan: document.getElementById("inlineEditKeterangan").value.trim()
-  };
-  if (!changes.tanggal || !changes.noDoc) {
-    return showToast("Tanggal dan No Document wajib diisi.", "error");
-  }
-
-  const row = {
-    ...existing,
-    ...changes,
-    rowIndex,
-    fields: { ...(existing.fields || {}), ...changes }
-  };
-  Swal.fire({ title: "Memperbarui Data...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-  try {
-    const res = await callGasApi({ action: "updateRow", row });
-    Swal.close();
-    sheetColumns = Array.isArray(res.columns) && res.columns.length > 0 ? res.columns : sheetColumns;
-    allRecords = res.records || [];
-    selectedNoDoc = changes.noDoc;
-    editingRowIndex = null;
-    applyFilters();
-    saveLocalSnapshot();
-    showToast("Baris Surat Jalan berhasil diperbarui.", "success");
-  } catch (err) {
-    Swal.fire({ icon: "error", title: "Gagal Update", text: err.message });
-  }
-}
-
-function confirmDeleteRow(rowIndex) {
-  Swal.fire({
-    title: "Hapus Baris?",
-    text: "Data baris ini akan dihapus permanen dari sheet Data.",
-    icon: "warning",
-    showCancelButton: true,
-    confirmButtonColor: "#ef4444",
-    confirmButtonText: "Ya, Hapus"
-  }).then(async (result) => {
-    if (!result.isConfirmed) return;
-    Swal.fire({ title: "Menghapus...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    try {
-      const res = await callGasApi({ action: "deleteRow", rowIndex });
-      Swal.close();
-      editingRowIndex = null;
-      allRecords = res.records || [];
-      applyFilters();
-      saveLocalSnapshot();
-      showToast("Baris berhasil dihapus.", "success");
-    } catch (err) {
-      Swal.fire({ icon: "error", title: "Gagal", text: err.message });
-    }
-  });
-}
-
-function confirmDeleteDocument(noDoc) {
-  Swal.fire({
+async function confirmDeleteDocument(noDoc) {
+  const result = await Swal.fire({
     title: "Hapus Seluruh Dokumen?",
     text: `Semua baris item dengan No Document "${noDoc}" akan dihapus.`,
     icon: "warning",
     showCancelButton: true,
-    confirmButtonColor: "#ef4444",
-    confirmButtonText: "Ya, Hapus Dokumen"
-  }).then(async (result) => {
-    if (!result.isConfirmed) return;
-    Swal.fire({ title: "Menghapus Dokumen...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    try {
-      const res = await callGasApi({ action: "deleteDocument", noDoc });
-      Swal.close();
-      allRecords = res.records || [];
-      selectedNoDoc = null;
-      editingRowIndex = null;
-      applyFilters();
-      saveLocalSnapshot();
-      switchView("all");
-      showToast(`Dokumen ${noDoc} telah dihapus.`, "success");
-    } catch (err) {
-      Swal.fire({ icon: "error", title: "Gagal", text: err.message });
+    confirmButtonText: "Ya, Hapus Dokumen",
+    cancelButtonText: "Batal",
+    buttonsStyling: false,
+    customClass: {
+      popup: "mr-confirm-popup",
+      title: "mr-confirm-title",
+      htmlContainer: "mr-confirm-html",
+      actions: "mr-confirm-actions",
+      confirmButton: "mr-confirm-button",
+      cancelButton: "mr-cancel-button"
     }
   });
+  if (!result.isConfirmed) return;
+
+  showSuratJalanLoading("Menghapus Dokumen...");
+  try {
+    const response = await callGasApi({ action: "deleteDocument", noDoc });
+    Swal.close();
+    allRecords = response.records || [];
+    selectedNoDoc = null;
+    isInlineEditingDocument = false;
+    applyFilters();
+    saveLocalSnapshot();
+    switchView("all");
+    showToast(`Dokumen ${noDoc} telah dihapus.`, "success");
+  } catch (error) {
+    Swal.close();
+    Swal.fire({ icon: "error", title: "Gagal", text: error.message });
+  }
 }
 
 function exportToExcel() {

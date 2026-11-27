@@ -1779,11 +1779,20 @@ function confirmDeleteMr(noMr) {
     text: `Semua item dengan No Material Request "${noMr}" akan dihapus.`,
     icon: "warning",
     showCancelButton: true,
-    confirmButtonColor: "#ef4444",
-    confirmButtonText: "Ya, Hapus MR"
+    confirmButtonText: "Ya, Hapus MR",
+    cancelButtonText: "Batal",
+    buttonsStyling: false,
+    customClass: {
+      popup: "mr-confirm-popup",
+      title: "mr-confirm-title",
+      htmlContainer: "mr-confirm-html",
+      actions: "mr-confirm-actions",
+      confirmButton: "mr-confirm-button",
+      cancelButton: "mr-cancel-button"
+    }
   }).then(async (result) => {
     if (!result.isConfirmed) return;
-    Swal.fire({ title: "Menghapus Dokumen MR...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    showDocumentSaveLoading("Menghapus Dokumen MR...");
     try {
       const res = await callGasApi({ action: "deleteMR", noMr });
       Swal.close();

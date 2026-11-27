@@ -171,7 +171,8 @@ async function loadFixedAssetCatalog(forceRefresh = false) {
     equipmentNo: String(asset.equipmentNo || "").trim(),
     equipmentName: String(asset.equipmentName || "").trim(),
     type: String(asset.type || "").trim(),
-    serialNo: String(asset.serialNo || "").trim()
+    serialNo: String(asset.serialNo || "").trim(),
+    hm: asset.hm == null ? "" : asset.hm
   })).filter(asset => asset.equipmentNo);
   legacyFixedAssetCatalogTimestamp = 0;
   saveLocalSnapshot();
@@ -608,21 +609,27 @@ function renderBacklogDetail() {
     return;
   }
 
-  const fields = BACKLOG_EDITABLE_FIELDS.map(field => {
+  const compactFieldNames = new Set(["HM", "Critical/Priorities", "Execution Plan", "Est.Duration (Hours)"]);
+  const detailCards = BACKLOG_EDITABLE_FIELDS.map(field => {
     const raw = getRecordValue(record, field);
     const value = field.includes("Date") || field === "Execution Plan" ? getDateText(raw) : String(raw ?? "");
-    const isWide = ["Anomaly/WO Description", "Action Required", "Execution Plan", "Sparepart Need", "Remarks"].includes(field);
+    const isWide = ["Anomaly/WO Description", "Action Required", "Sparepart Need", "Remarks"].includes(field);
     const isNarrative = ["Anomaly/WO Description", "Action Required", "Sparepart Need"].includes(field);
     const displayValue = field === "Status"
       ? `${escapeHtml(value || "-")} <i class="bi bi-list-check backlog-status-check ${statusChecklistClass(value)}" aria-label="${escapeHtml(value || "Open")}"></i>`
       : escapeHtml(isNarrative ? formatBacklogNarrative(value) || "-" : value || "-");
-    return `
-      <div class="backlog-detail-field${isWide ? " wide" : ""}">
-        <div class="backlog-detail-label">${escapeHtml(field)}</div>
-        <div class="backlog-detail-value${isNarrative ? " backlog-narrative-value" : ""}">${displayValue}</div>
-      </div>
-    `;
-  }).join("");
+    return {
+      field,
+      html: `
+        <div class="backlog-detail-field${isWide ? " wide" : ""}">
+          <div class="backlog-detail-label">${escapeHtml(field)}</div>
+          <div class="backlog-detail-value${isNarrative ? " backlog-narrative-value" : ""}">${displayValue}</div>
+        </div>
+      `
+    };
+  });
+  const compactCards = detailCards.filter(item => compactFieldNames.has(item.field)).map(item => item.html).join("");
+  const fields = detailCards.filter(item => !compactFieldNames.has(item.field)).map(item => item.html).join("");
   container.innerHTML = `
     <div class="doc-summary-box">
       <div>
@@ -634,6 +641,7 @@ function renderBacklogDetail() {
         <button type="button" class="btn btn-ghost btn-sm backlog-delete" onclick="confirmDeleteBacklog('${escapeJs(String(selectedRowIndex))}')"><i class="bi bi-trash3"></i> Hapus</button>
       </div>
     </div>
+    <div class="backlog-detail-grid backlog-hm-summary-grid">${compactCards}</div>
     <div class="backlog-detail-grid">${fields}</div>
   `;
   document.getElementById("activeBacklogInfo").textContent = `Backlog: ${equipment}`;
@@ -854,6 +862,16 @@ async function submitBacklog(event) {
   fields["Equipment Name"] = selectedAsset.equipmentName;
   fields["Type"] = selectedAsset.type;
 
+  const assetHm = String(selectedAsset.hm ?? "").trim();
+  if (fields.HM !== "" && assetHm !== "" &&
+      Number.isFinite(Number(assetHm)) && Number(fields.HM) < Number(assetHm)) {
+    return showToast(
+      `HM Backlog (${fields.HM}) tidak boleh lebih kecil dari HM Fixed Asset (${assetHm}).`,
+      "error",
+      "HM Tidak Valid"
+    );
+  }
+
   for (const field of ["HM", "Est.Duration (Hours)"]) {
     if (fields[field] !== "" && (!Number.isFinite(Number(fields[field])) || Number(fields[field]) < 0)) {
       return showToast(`${field} harus berupa angka nol atau lebih.`, "error", "Nilai Tidak Valid");
@@ -902,9 +920,17 @@ function confirmDeleteBacklog(rowIndex) {
     text: `Data ${equipment || "Backlog ini"} akan dihapus dari server.`,
     icon: "warning",
     showCancelButton: true,
-    confirmButtonColor: "#dc2626",
     confirmButtonText: "Ya, Hapus",
-    cancelButtonText: "Batal"
+    cancelButtonText: "Batal",
+    buttonsStyling: false,
+    customClass: {
+      popup: "mr-confirm-popup",
+      title: "mr-confirm-title",
+      htmlContainer: "mr-confirm-html",
+      actions: "mr-confirm-actions",
+      confirmButton: "mr-confirm-button",
+      cancelButton: "mr-cancel-button"
+    }
   }).then(async result => {
     if (!result.isConfirmed) return;
     showSaveLoading("Menghapus Backlog");

@@ -16,6 +16,7 @@ let pendingUpdates = new Map(); // "rowIndex_colIndex" -> { rowIndex, colIndex, 
 let pendingNewRows = [];
 let selectedRowKey = null;    // rowIndex angka atau "NEW_0"
 let currentViewMode = "matrix"; // "matrix" | "form"
+let isEditingUnit = false;
 let activeCellCoords = { visibleRowIdx: 0, colIndex: 1 };
 
 function getGasUrl() {
@@ -197,6 +198,7 @@ function applyServerData(res, isInitial = false, persistSnapshot = true) {
   sheetColumns = res.columns || [];
   sheetRows = res.rows || [];
   if (res.sheetDate) sheetDate = res.sheetDate;
+  isEditingUnit = false;
   pendingUpdates.clear();
   pendingNewRows = [];
   updateDirtyCounter();
@@ -293,14 +295,63 @@ function switchViewMode(mode) {
 
 function selectUnitRow(rowKey) {
   selectedRowKey = rowKey;
+  isEditingUnit = false;
+  currentViewMode = "form";
   renderAssetList();
   updateSelectedBanner();
+  document.getElementById("btnModeMatrix").classList.remove("active");
+  document.getElementById("btnModeForm").classList.add("active");
+  document.getElementById("viewMatrix").classList.remove("active");
+  document.getElementById("viewForm").classList.add("active");
+  syncUnitEditControls();
   renderDetailForm();
 
   // Highlight baris di matrix jika ada
   document.querySelectorAll("#rhGridBody tr").forEach(tr => {
     tr.classList.toggle("selected-row", String(tr.dataset.rowkey) === String(rowKey));
   });
+}
+
+function syncUnitEditControls() {
+  const all = getAllRowsRaw();
+  const selected = all.find(row => String(row.rowIndex) === String(selectedRowKey));
+  const editButton = document.getElementById("btnEditUnit");
+  const deleteButton = document.getElementById("btnDeleteUnit");
+  if (!editButton || !deleteButton) return;
+
+  editButton.disabled = !selected;
+  editButton.innerHTML = isEditingUnit
+    ? '<i class="bi bi-cloud-check"></i> Simpan Perubahan'
+    : '<i class="bi bi-pencil-square"></i> Edit';
+  editButton.classList.toggle("btn-primary", isEditingUnit);
+  editButton.classList.toggle("btn-ghost", !isEditingUnit);
+  deleteButton.disabled = !selected || selected.isNew;
+  ["quickDateColSelect", "quickDateValue", "btnQuickDateSelected", "btnQuickDateAll", "excelUploadInput", "btnUploadRhExcel"]
+    .forEach(id => {
+      const control = document.getElementById(id);
+      if (control) control.disabled = !isEditingUnit;
+    });
+}
+
+function toggleUnitEdit() {
+  if (isEditingUnit) {
+    saveAllChanges();
+    return;
+  }
+  if (!getAllRowsRaw().some(row => String(row.rowIndex) === String(selectedRowKey))) {
+    showToast("Pilih unit terlebih dahulu.", "info");
+    return;
+  }
+  isEditingUnit = !isEditingUnit;
+  syncUnitEditControls();
+  renderMatrixGrid();
+  renderDetailForm();
+}
+
+function deleteSelectedUnit() {
+  const selected = getAllRowsRaw().find(row => String(row.rowIndex) === String(selectedRowKey));
+  if (!selected || selected.isNew) return;
+  confirmDeleteRow(Number(selected.rowIndex), String(selected.cells[0] || ""));
 }
 
 function updateSelectedBanner() {
@@ -325,6 +376,7 @@ function renderAll() {
   renderAssetList();
   renderMatrixGrid();
   updateSelectedBanner();
+  syncUnitEditControls();
   renderDetailForm();
 }
 
@@ -334,12 +386,15 @@ function renderAssetList() {
   document.getElementById("unitCountBadge").textContent = rows.length;
 
   if (rows.length === 0) {
+    selectedRowKey = null;
+    isEditingUnit = false;
     container.innerHTML = `<div class="empty-state">Tidak ada unit.</div>`;
     return;
   }
 
   if (!rows.some(r => String(r.rowIndex) === String(selectedRowKey))) {
     selectedRowKey = rows[0].rowIndex;
+    isEditingUnit = false;
   }
 
   container.innerHTML = rows.map(r => {
@@ -421,6 +476,8 @@ function renderMatrixGrid() {
               class="cell-input ${alignCls}${dirtyCls}"
               style="${fw}"
               value="${escapeHtml(String(val))}"
+              ${isEditingUnit && isSelected ? "" : "readonly"}
+              onclick="${isEditingUnit && isSelected ? "event.stopPropagation()" : ""}"
               data-vrow="${vRowIdx}"
               data-rowindex="${rowObj.rowIndex}"
               data-colindex="${col.colIndex}"
@@ -464,20 +521,51 @@ function renderDetailForm() {
     return `
       <div class="mini-field">
         <label>${escapeHtml(col.title)}</label>
-        <input type="text" value="${escapeHtml(String(val))}" onchange="applyCellChange('${unit.rowIndex}', ${col.colIndex}, this.value, this)" />
+        <input type="text" value="${escapeHtml(String(val))}" ${isEditingUnit ? "" : "disabled"} onchange="applyCellChange('${unit.rowIndex}', ${col.colIndex}, this.value, this)" />
       </div>
     `;
   }).join("");
 
-  const kpiHtml = formulaCols.slice(0, 6).map(col => {
-    const val = unit.cells[col.colIndex - 1];
+  const selectedMonth = document.getElementById("monthFilter").value;
+  const runningTotalCol = selectedMonth === "ALL"
+    ? formulaCols.find(col => col.title.toUpperCase().startsWith("TOTAL") && col.title.toUpperCase().includes("AKHIR"))
+    : formulaCols.find(col =>
+      col.title.toUpperCase().startsWith("TOTAL") &&
+      String(col.group).toLowerCase() === selectedMonth.toLowerCase()
+    );
+  const runningTotal = runningTotalCol ? unit.cells[runningTotalCol.colIndex - 1] : "";
+  const runningTotalText = Number.isFinite(Number(runningTotal))
+    ? Number(runningTotal).toLocaleString("id-ID", { maximumFractionDigits: 2 })
+    : escapeHtml(String(runningTotal || "-"));
+  const runningTotalCard = `
+    <div class="kpi-box kpi-running-total">
+      <div class="k-label">Total Jam Running (${escapeHtml(selectedMonth === "ALL" ? "Semua Bulan" : selectedMonth)})</div>
+      <div class="k-val">${runningTotalText} <span>jam</span></div>
+    </div>
+  `;
+  const avgMtdCol = selectedMonth === "ALL"
+    ? formulaCols.find(col => col.title.toUpperCase() === "AVG MTD")
+    : formulaCols.find(col =>
+      col.title.toUpperCase().startsWith("AVG") &&
+      String(col.group).toLowerCase() === selectedMonth.toLowerCase()
+    );
+  const totalAkhirCol = formulaCols.find(col =>
+    col.title.toUpperCase().startsWith("TOTAL") &&
+    col.title.toUpperCase().includes("AKHIR")
+  );
+  const formulaKpis = [
+    { title: "AVG MTD", value: avgMtdCol ? unit.cells[avgMtdCol.colIndex - 1] : "" },
+    { title: totalAkhirCol ? totalAkhirCol.title : "TOTAL (AKHIR)", value: totalAkhirCol ? unit.cells[totalAkhirCol.colIndex - 1] : "" }
+  ].map(kpi => {
+    const val = kpi.value;
     return `
       <div class="kpi-box">
-        <div class="k-label">${escapeHtml(col.title)}</div>
+        <div class="k-label">${escapeHtml(kpi.title)}</div>
         <div class="k-val">${val === "" || val === undefined ? 0 : escapeHtml(String(val))}</div>
       </div>
     `;
   }).join("");
+  const kpiHtml = runningTotalCard + formulaKpis;
 
   const daysHtml = dateCols.map(col => {
     const val = unit.cells[col.colIndex - 1] ?? "";
@@ -490,6 +578,7 @@ function renderDetailForm() {
           step="any"
           class="${isDirty ? "cell-dirty" : ""}"
           value="${escapeHtml(String(val))}"
+          ${isEditingUnit ? "" : "disabled"}
           onchange="applyCellChange('${unit.rowIndex}', ${col.colIndex}, this.value, this)"
         />
       </div>
@@ -507,6 +596,7 @@ function renderDetailForm() {
 }
 
 function applyCellChange(rowIndexRaw, colIndex, rawValue, el) {
+  if (!isEditingUnit) return;
   const trimmed = String(rawValue ?? "").trim();
   let parsed = trimmed;
   if (colIndex >= 9 && trimmed !== "" && !isNaN(Number(trimmed))) {
@@ -535,6 +625,7 @@ function updateDirtyCounter() {
 // QUICK INPUT TANGGAL TERTENTU
 // ============================================================
 function applyQuickDateToSelected() {
+  if (!isEditingUnit) return showToast("Klik Edit pada unit terpilih sebelum mengubah data.", "info");
   const colIndex = Number(document.getElementById("quickDateColSelect").value);
   const valRaw = document.getElementById("quickDateValue").value.trim();
   if (!colIndex || valRaw === "") return showToast("Pilih tanggal dan isi nilai jam.", "error");
@@ -549,6 +640,7 @@ function applyQuickDateToSelected() {
 }
 
 function applyQuickDateToAllFiltered() {
+  if (!isEditingUnit) return showToast("Klik Edit pada unit terpilih sebelum mengubah data.", "info");
   const colIndex = Number(document.getElementById("quickDateColSelect").value);
   const valRaw = document.getElementById("quickDateValue").value.trim();
   if (!colIndex || valRaw === "") return showToast("Pilih tanggal dan isi nilai jam.", "error");
@@ -565,6 +657,11 @@ function applyQuickDateToAllFiltered() {
 function setupClipboardPaste() {
   document.addEventListener("paste", function(e) {
     if (!document.activeElement || !document.activeElement.classList.contains("cell-input")) return;
+    if (!isEditingUnit) {
+      e.preventDefault();
+      showToast("Klik Edit pada unit terpilih sebelum menempelkan data.", "info");
+      return;
+    }
     const text = (e.clipboardData || window.clipboardData).getData("text");
     if (!text) return;
 
@@ -615,6 +712,11 @@ function setupClipboardPaste() {
 }
 
 function handleExcelFileUpload(event) {
+  if (!isEditingUnit) {
+    showToast("Klik Edit pada unit terpilih sebelum mengimpor data Excel.", "info");
+    event.target.value = "";
+    return;
+  }
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -715,12 +817,21 @@ function showInputRhLoading(title) {
 
 async function saveAllChanges() {
   const updates = Array.from(pendingUpdates.values());
-  if (!updates.length && !pendingNewRows.length) return showToast("Tidak ada perubahan untuk disimpan.", "info");
+  if (!updates.length && !pendingNewRows.length) {
+    if (isEditingUnit) {
+      isEditingUnit = false;
+      syncUnitEditControls();
+      renderMatrixGrid();
+      renderDetailForm();
+    }
+    return showToast("Tidak ada perubahan untuk disimpan.", "info");
+  }
 
   showInputRhLoading("Menyimpan perubahan");
   try {
     const res = await callGasApi({ action: "saveBulk", updates, newRows: pendingNewRows });
     Swal.close();
+    isEditingUnit = false;
     applyServerData(res, false);
     showToast("Perubahan berhasil disimpan.", "success");
   } catch (err) {
@@ -932,28 +1043,37 @@ async function submitNewEquipment() {
   }
 }
 
-function confirmDeleteRow(rowIndex, eqName) {
-  Swal.fire({
+async function confirmDeleteRow(rowIndex, eqName) {
+  const result = await Swal.fire({
     title: "Hapus Unit?",
-    text: `Hapus baris "${eqName}" dari sheet Entry Data?`,
+    text: `Hapus baris "${eqName}" dari server?`,
     icon: "warning",
     showCancelButton: true,
-    confirmButtonColor: "#ef4444",
-    confirmButtonText: "Ya, Hapus"
-  }).then(async (result) => {
-    if (!result.isConfirmed) return;
-    showInputRhLoading("Menghapus Unit");
-    try {
-      const res = await callGasApi({ action: "deleteEquipment", rowIndex });
-      Swal.close();
-      if (String(selectedRowKey) === String(rowIndex)) selectedRowKey = null;
-      applyServerData(res, false);
-      showToast("Unit dihapus.", "success");
-    } catch (err) {
-      Swal.close();
-      showToast(err.message, "error", "Gagal Menghapus Unit");
+    confirmButtonText: "Ya, Hapus",
+    cancelButtonText: "Batal",
+    buttonsStyling: false,
+    customClass: {
+      popup: "mr-confirm-popup",
+      title: "mr-confirm-title",
+      htmlContainer: "mr-confirm-html",
+      actions: "mr-confirm-actions",
+      confirmButton: "mr-confirm-button",
+      cancelButton: "mr-cancel-button"
     }
   });
+  if (!result.isConfirmed) return;
+
+  showInputRhLoading("Menghapus Unit");
+  try {
+    const res = await callGasApi({ action: "deleteEquipment", rowIndex });
+    Swal.close();
+    if (String(selectedRowKey) === String(rowIndex)) selectedRowKey = null;
+    applyServerData(res, false);
+    showToast("Unit dihapus.", "success");
+  } catch (err) {
+    Swal.close();
+    showToast(err.message, "error", "Gagal Menghapus Unit");
+  }
 }
 
 function openApiConfigModal() {

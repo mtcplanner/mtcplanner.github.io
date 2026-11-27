@@ -307,6 +307,58 @@ table.mr-table tbody td.wrap-cell {
   border-right-color: #0284c7;
   border-bottom-color: #0284c7;
 }
+.swal2-popup.mr-confirm-popup {
+  width: min(390px, calc(100vw - 32px));
+  padding: 24px 22px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 20px 55px rgba(15, 23, 42, 0.18);
+  font-family: 'Inter', sans-serif;
+}
+.mr-confirm-popup .mr-confirm-title {
+  margin: 10px 0 0;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+}
+.mr-confirm-popup .mr-confirm-html {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+.mr-confirm-popup .mr-confirm-input {
+  width: 100%;
+  margin: 12px 0 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.mr-confirm-popup .mr-confirm-actions {
+  gap: 8px;
+  margin-top: 18px;
+}
+.mr-confirm-popup .mr-confirm-button,
+.mr-confirm-popup .mr-cancel-button {
+  min-height: 34px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mr-confirm-popup .mr-confirm-button {
+  background: #dc2626;
+  color: #fff;
+}
+.mr-confirm-popup .mr-confirm-button:hover { background: #b91c1c; }
+.mr-confirm-popup .mr-cancel-button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+}
+.mr-confirm-popup .mr-cancel-button:hover { background: #f8fafc; }
 .mr-approval-popup {
   width: min(410px, calc(100vw - 32px));
   padding: 24px 22px 20px;

@@ -394,8 +394,17 @@ async function deleteRecord(rowId) {
     showCancelButton: true,
     confirmButtonText: "Hapus",
     cancelButtonText: "Batal",
-    confirmButtonColor: "#dc2626",
-    reverseButtons: true
+    reverseButtons: true,
+    buttonsStyling: false,
+    customClass: {
+      popup: "mr-confirm-popup",
+      title: "mr-confirm-title",
+      htmlContainer: "mr-confirm-html",
+      input: "mr-confirm-input",
+      actions: "mr-confirm-actions",
+      confirmButton: "mr-confirm-button",
+      cancelButton: "mr-cancel-button"
+    }
   });
   if (!answer.isConfirmed) return;
   if (!answer.value) {

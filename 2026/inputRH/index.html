@@ -64,20 +64,20 @@
 
     <div class="quick-date-box">
       <span class="quick-title"><i class="bi bi-lightning-charge-fill"></i> Quick Input Tanggal:</span>
-      <select id="quickDateColSelect" class="ctrl-select" style="min-width:115px;"></select>
-      <input type="number" id="quickDateValue" class="ctrl-input" placeholder="Jam (RH)" style="width:88px;" />
-      <button type="button" class="btn btn-primary btn-sm" onclick="applyQuickDateToSelected()" title="Isi ke unit yang sedang dipilih">
+      <select id="quickDateColSelect" class="ctrl-select" style="min-width:115px;" disabled></select>
+      <input type="number" id="quickDateValue" class="ctrl-input" placeholder="Jam (RH)" style="width:88px;" disabled />
+      <button type="button" class="btn btn-primary btn-sm" id="btnQuickDateSelected" onclick="applyQuickDateToSelected()" title="Isi ke unit yang sedang dipilih" disabled>
         Isi Unit Aktif
       </button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="applyQuickDateToAllFiltered()" title="Isi ke semua unit yang tampil sesuai filter">
+      <button type="button" class="btn btn-ghost btn-sm" id="btnQuickDateAll" onclick="applyQuickDateToAllFiltered()" title="Isi ke semua unit yang tampil sesuai filter" disabled>
         Isi Semua Tampil
       </button>
     </div>
 
     <div class="paste-cluster">
       <span class="paste-badge"><kbd>Ctrl+V</kbd> Paste Excel</span>
-      <input type="file" id="excelUploadInput" accept=".xlsx,.xls" style="display:none;" onchange="handleExcelFileUpload(event)" />
-      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('excelUploadInput').click()">
+      <input type="file" id="excelUploadInput" accept=".xlsx,.xls" style="display:none;" onchange="handleExcelFileUpload(event)" disabled />
+      <button type="button" class="btn btn-ghost btn-sm" id="btnUploadRhExcel" onclick="document.getElementById('excelUploadInput').click()" disabled>
         <i class="bi bi-file-earmark-spreadsheet"></i> Upload .xlsx
       </button>
     </div>
@@ -111,6 +111,14 @@
 
         <div class="selected-unit-banner" id="selectedUnitBanner">
           Unit Aktif: <strong>-</strong>
+        </div>
+        <div class="unit-edit-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="btnEditUnit" onclick="toggleUnitEdit()">
+            <i class="bi bi-pencil-square"></i> Edit
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnDeleteUnit" onclick="deleteSelectedUnit()" disabled>
+            <i class="bi bi-trash3"></i> Hapus Unit
+          </button>
         </div>
       </div>
 
