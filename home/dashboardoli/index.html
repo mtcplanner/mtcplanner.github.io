@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Monitoring Oli | MTC Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page-shell">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">OIL INVENTORY &amp; CONSUMPTION</span>
+        <h1>Monitoring Stok &amp; Pemakaian Oli</h1>
+        <p>Pantau saldo lintas lokasi dan kondisi stok kritis.</p>
+        <span class="updated" id="updatedAt">Memuat data...</span>
+      </div>
+      <div class="hero-actions">
+        <button class="button button-light" id="refreshButton" type="button">↻ Refresh Data</button>
+        <a class="button button-primary" id="inputLink" href="../../2026/inputoli/">＋ Input Transaksi Oli</a>
+      </div>
+    </header>
+
+    <div class="notice notice-error" id="errorNotice" role="alert" hidden></div>
+
+    <section class="kpi-grid" id="kpiGrid" aria-label="Ringkasan stok oli"></section>
+
+    <section class="panel critical-panel">
+      <div class="panel-heading">
+        <div>
+          <h2>🚨 Peringatan Kondisi Oli Kritis</h2>
+          <p>Saldo akhir sama dengan atau di bawah batas minimum stok.</p>
+        </div>
+        <span class="count-pill critical-pill" id="criticalCount">0 Item Kritis</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Lokasi</th><th>Kode Oli</th><th>Nama Oli</th><th>Kategori</th>
+              <th>Min Alert</th><th>Saldo Akhir</th><th>Selisih</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="criticalBody">
+            <tr><td class="empty-cell" colspan="8">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>📦 Summary Total Semua Oli</h2>
+          <p>Akumulasi dari seluruh lokasi aktif.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Kode Oli</th><th>Nama Oli</th><th>Kategori Aplikasi</th>
+              <th>Stok Awal Hari</th><th>Stok Datang</th><th>Stok Terpakai</th>
+              <th>Total Saldo Akhir</th><th>Lokasi Kritis</th>
+            </tr>
+          </thead>
+          <tbody id="globalSummaryBody">
+            <tr><td class="empty-cell" colspan="8">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel locations-panel">
+      <div class="panel-heading locations-heading">
+        <div>
+          <h2>📍 Monitoring Stok per Lokasi</h2>
+          <p>Saldo dan pergerakan oli untuk setiap lokasi.</p>
+        </div>
+        <label class="search-box">
+          <span aria-hidden="true">⌕</span>
+          <input id="locationSearch" type="search" placeholder="Cari lokasi atau nama oli..." autocomplete="off">
+        </label>
+      </div>
+      <div class="location-grid" id="locationGrid">
+        <div class="empty-cell">Memuat data...</div>
+      </div>
+    </section>
+
+    <section class="panel recent-panel">
+      <div class="panel-heading">
+        <div>
+          <h2>🧾 Transaksi Terbaru</h2>
+          <p>Riwayat transaksi paling baru yang tersimpan.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tanggal</th><th>MR</th><th>Lokasi</th><th>Nama Oli</th>
+              <th>Tipe</th><th>Qty</th><th>No. Ref / SJ / WO</th><th>Input By</th>
+            </tr>
+          </thead>
+          <tbody id="recentBody">
+            <tr><td class="empty-cell" colspan="8">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="../../shared/monitoringoli-api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
