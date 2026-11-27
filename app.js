@@ -98,13 +98,13 @@ function showDashboard(userData) {
 }
 
 async function handleLogin() {
-  const u = document.getElementById('username').value.trim();
+  const identifier = document.getElementById('username').value.trim();
   const p = document.getElementById('password').value;
   const btn = document.getElementById('btnLogin');
   const err = document.getElementById('loginError');
 
-  if (!u || !p) {
-    err.textContent = "Username dan password wajib diisi!";
+  if (!identifier || !p) {
+    err.textContent = "Username/email dan password wajib diisi!";
     err.style.display = 'block';
     return;
   }
@@ -113,7 +113,7 @@ async function handleLogin() {
   btn.innerHTML = '<span>Memverifikasi...</span>';
   err.style.display = 'none';
 
-  const res = await apiCall('loginUser', { username: u, password: p });
+  const res = await apiCall('loginUser', { username: identifier, password: p });
   btn.disabled = false;
   btn.innerHTML = '<span>MASUK SEKARANG</span>';
 
@@ -123,7 +123,7 @@ async function handleLogin() {
     showDashboard(currentUser);
     showToast("Selamat datang kembali di Portal Planner!", "success");
   } else {
-    err.textContent = res.message || "Username atau password salah!";
+    err.textContent = res.message || "Username/email atau password salah!";
     err.style.display = 'block';
   }
 }
