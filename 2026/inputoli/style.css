@@ -113,6 +113,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .type-pill.incoming { background: #e0f2fe; color: #0369a1; }
 .type-pill.usage { background: #fef3c7; color: #b45309; }
 .detail-input { min-width: 88px; }
+.detail-table .number-cell, .detail-table .number-input { text-align: center; }
 .detail-table td:nth-child(7) { min-width: 82px; }
 .row-action-placeholder { color: #cbd5e1; }
 

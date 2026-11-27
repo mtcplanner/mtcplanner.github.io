@@ -53,10 +53,10 @@ button, input { font: inherit; }
 .status-ok { color: var(--green); background: #dcfce7; }
 .table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; min-width: 760px; }
-th { padding: 10px 9px; color: #475569; background: #f8fafc; font-size: 9px; font-weight: 800; text-align: left; text-transform: uppercase; white-space: nowrap; }
-td { padding: 9px; border-bottom: 1px solid var(--line); font-size: 10px; vertical-align: middle; }
+th { padding: 10px 9px; color: #475569; background: #f8fafc; font-size: 9px; font-weight: 800; text-align: center; text-transform: uppercase; white-space: nowrap; }
+td { padding: 9px; border-bottom: 1px solid var(--line); font-size: 10px; text-align: center; vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
-.number-cell { text-align: right; white-space: nowrap; }
+.number-cell { text-align: center; white-space: nowrap; }
 .danger-text { color: var(--red); }
 .incoming-text { color: #0284c7; }
 .usage-text { color: #d97706; }
@@ -73,7 +73,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .location-card-header p { margin: 3px 0 0; color: var(--muted); font-size: 9px; }
 .location-table-wrap table { min-width: 550px; }
 .location-table th, .location-table td { padding: 7px 8px; }
-.location-table td:not(:first-child) { text-align: right; white-space: nowrap; }
+.location-table td:not(:first-child) { text-align: center; white-space: nowrap; }
 .location-table td:last-child { text-align: center; }
 .critical-row { background: #fffafb; }
 
